@@ -34,21 +34,24 @@ author:
     email: public@karlmcguinness.com
 
 normative:
+  RFC6749:
+  RFC6838:
   RFC7515:
   RFC7517:
   RFC7519:
   RFC7638:
   RFC7800:
+  RFC8414:
   RFC8693:
   RFC8707:
+  RFC8725:
+  RFC9278:
   RFC9396:
   RFC9449:
 
 informative:
-  RFC6749:
   RFC9068:
   RFC2693:
-  RFC8725:
   RFC9700:
   I-D.mcguinness-oauth-cross-client-delegation:
     title: "Cross-Client Delegation Profile for OAuth 2.0 Token Exchange"
@@ -99,7 +102,7 @@ informative:
 
 --- abstract
 
-A proof-of-possession (PoP) token, such as a key-bound OpenID Connect ID Token or a JWT carrying an RFC 7800 confirmation (`cnf`) claim, can only be presented by the party that holds the confirmation key.  This prevents such a token from being handed to a different party for onward use, even when that handoff is intended and authorized.  This document defines the Presenter Delegation Assertion (PDA): a signed, attenuated statement by which the holder of a token's confirmation key delegates the authority to present that token to a different key.  A verifier validates a chain from the token's confirmation key, through one or more PDAs, to the key the current presenter proves possession of, establishing that the presenter was authorized by the confirmation-key holder and constraining what the presenter may do.  The mechanism composes with OAuth 2.0 Token Exchange, DPoP, and delegation profiles that need to move a proof-of-possession token across a change of presenter without transferring private keys.
+A proof-of-possession (PoP) token, such as a key-bound OpenID Connect ID Token or a JWT carrying an RFC 7800 confirmation (`cnf`) claim, can only be presented by a party that holds the confirmation key.  This prevents such a token from being handed to a different party for onward use, even when that handoff is intended and authorized.  This document defines the Presenter Delegation Assertion (PDA): a signed, attenuated statement by which the holder of a token's confirmation key authorizes a different key to present that specific token at a named verifier.  A verifier validates a chain from the token's confirmation key, through one or more PDAs, to the key the current presenter proves possession of.  The mechanism composes with OAuth 2.0 Token Exchange, DPoP, and delegation profiles that need to continue proof of possession across a change of presenter without transferring private keys.
 
 
 --- middle
@@ -116,17 +119,19 @@ PoP binding creates a difficulty whenever the party that should present a token 
 
 Two unsatisfactory options are common today.  The first is to strip the binding and forward the token as a bearer credential, which discards the very protection PoP binding provides and lets any interceptor use a captured token.  The second is to share the private key, which is generally unacceptable and often impossible.
 
-This document defines a third option: an authorized, cryptographically verifiable **transfer** of presentation authority, with attenuation.  The holder of a token's confirmation key issues a **Presenter Delegation Assertion (PDA)**: a short-lived, signed statement that delegates the authority to present a specific token to a named recipient key, optionally narrowing what the recipient may do.  A verifier validates a chain from the token's confirmation key, through the PDA (or a sequence of PDAs), to the key the current presenter proves possession of.  The chain establishes that the presenter was authorized by the confirmation-key holder, without any private key leaving its holder, and the attenuation caveats bound what the presenter may request.
+This document defines a third option: an authorized, cryptographically verifiable delegation of presentation authority, with attenuation.  The holder of a token's confirmation key issues a **Presenter Delegation Assertion (PDA)**: a short-lived, signed statement that delegates the authority to present a specific token at a named verifier to a recipient key, optionally narrowing what the recipient may request.  A verifier validates a chain from the token's confirmation key, through the PDA (or a sequence of PDAs), to the key the current presenter proves possession of.  The chain establishes that the presenter was authorized by the confirmation-key holder, without any private key leaving its holder, and its constraints bound what the presenter may request.  Delegation is non-exclusive: it does not prevent the confirmation-key holder from continuing to present the Source Token directly.
 
-The construction is a public-key attenuation chain: each link is signed by one key and delegates a narrowed grant to the next key.  This is the shape of SPKI/SDSI delegation certificates {{RFC2693}} and of attenuable credentials such as macaroons {{Macaroons}}, specialized here to the transfer of proof-of-possession for OAuth and OpenID Connect tokens.
+The construction is a public key attenuation chain: each link is signed by one key, authorizes the next key to present the Source Token, and can narrow the requests made under that authority.  This is the shape of SPKI/SDSI delegation certificates {{RFC2693}} and of attenuable credentials such as macaroons {{Macaroons}}, specialized here to continuing proof of possession across a change of presenter in OAuth and OpenID Connect.
 
 ## Requirements and Scope {#scope}
 
-This document defines a general mechanism.  It is transport- and token-agnostic over any security token that carries an RFC 7800 confirmation claim.  {{token-exchange}} specifies its use with OAuth 2.0 Token Exchange, and {{profiles}} shows how a delegation profile consumes it.
+This document defines a general mechanism over an encoded security token whose validated representation carries an RFC 7800 confirmation claim.  The exact encoded token value is available both to the Delegator and to the Verifier and is hashed into each PDA.  {{token-exchange}} specifies its use with OAuth 2.0 Token Exchange, and {{profiles}} shows how a delegation profile consumes it.
 
-The mechanism applies only to a key-bound Source Token: the Source Token MUST carry a `cnf` claim {{RFC7800}}, whose confirmation key roots the delegation chain.  A bearer token that carries no confirmation key has no key to delegate from and is out of scope; a party that wishes to make such a token presentable by another key does so through the token's own issuer, not through this mechanism.
+The mechanism applies only to a Source Token bound to an asymmetric signing key.  The Source Token MUST carry a `cnf` claim {{RFC7800}} that the Verifier can reduce to a JWK SHA-256 Thumbprint as specified in {{key-identification}}; that thumbprint roots the delegation chain.  Symmetric confirmation keys and bearer tokens are out of scope.  A party that wishes to make a bearer token presentable by another key does so through the token's own issuer, not through this mechanism.
 
 This document changes nothing for direct presentation: a party that holds a Source Token's confirmation key and presents the token with its own proof of possession does so exactly as the token's own profile specifies, without a PDA.  A PDA is required only to authorize a party other than the confirmation-key holder to present the token.
+
+Presenter delegation is opt-in at the Verifier.  Possession of a confirmation key does not, by itself, require a token issuer or verifier to accept delegation of that key's presentation authority.  A Verifier MUST accept a PDA only under an applicable consuming profile and local policy that explicitly permit presenter delegation for the Source Token type and presentation context.
 
 The following are out of scope:
 
@@ -150,19 +155,19 @@ Confirmation Key:
 : The proof-of-possession key identified by a token's `cnf` claim.  The Source Token's confirmation key is held by the Delegator.
 
 Delegator:
-: The party that holds the confirmation key of the token it is delegating (the Source Token, or a prior PDA in a chain) and signs a PDA to delegate presentation authority to a Recipient.
+: The party that holds the Source Token's confirmation key or the Recipient private key named by the prior PDA in a chain, and signs a PDA to delegate presentation authority to the next Recipient.
 
 Recipient:
-: The party to whose key a PDA delegates presentation authority.  A Recipient becomes the presenter, or, if permitted, a Delegator for a further hop.
+: The party that controls the key identified by a PDA.  A Recipient becomes the presenter or, if permitted, a Delegator for a further hop.  A recipient key is not, by itself, a party identity; a consuming profile can require separate authentication and authorization of the party controlling it.
 
 Presenter Delegation Assertion (PDA):
-: A signed JWT by which a Delegator delegates the authority to present a specific Source Token to a Recipient key, optionally attenuated by caveats.  Defined in {{pda}}.
+: A signed JWT by which a Delegator delegates the authority to present a specific Source Token at a named Verifier to a Recipient key, optionally attenuated by request constraints.  Defined in {{pda}}.
 
 Delegation Chain:
 : An ordered sequence of one or more PDAs beginning at the Source Token's confirmation key and ending at the key the current presenter proves possession of.  Defined in {{chains}}.
 
 Attenuation:
-: The narrowing, by a PDA's caveats, of what its Recipient may request relative to what the Delegator itself could.  Caveats never broaden authority.
+: The narrowing, by a PDA's request constraints, of what its Recipient may request.  Constraints never grant authority and never broaden another authorization input.
 
 Verifier:
 : The party that validates a Source Token, a Delegation Chain, and the presenter's proof of possession.  In Token Exchange ({{token-exchange}}) the Verifier is the authorization server.
@@ -176,44 +181,52 @@ A Presenter Delegation Assertion is a JWT {{RFC7519}} secured as a JWS {{RFC7515
 
 *  `typ`: REQUIRED.  The explicit type `pda+jwt` ({{iana-media-type}}), distinguishing a PDA from an ID Token, an access token, a DPoP proof, and any other JWT.  A Verifier MUST reject a JWT presented as a PDA whose `typ` is not `pda+jwt`.
 
-*  `alg`: REQUIRED.  An asymmetric signing algorithm.  A Verifier MUST reject `alg` values of `none` and MUST reject symmetric algorithms.
+*  `alg`: REQUIRED.  An asymmetric digital-signature algorithm accepted by the Verifier.  The algorithm MUST be appropriate for the key in `jwk`.  A Verifier MUST reject `none`, symmetric algorithms, algorithms not on its allowlist, and an algorithm inconsistent with the key type.
 
-*  `jwk`: REQUIRED unless the Delegator's public key is already available to the Verifier from the delegated token's `cnf`.  The public key of the Delegator (the key that signs this PDA), as a JWK {{RFC7517}} containing only the public parameters.  The Verifier uses it to check the binding in {{validation}}.
+*  `jwk`: REQUIRED.  The public key of the Delegator (the key that signs this PDA), as an asymmetric JWK {{RFC7517}} containing only public parameters.  The Verifier computes its JWK SHA-256 Thumbprint and compares that value with the key identifier expected for this hop as specified in {{validation}}.  A Verifier MUST reject a `jwk` containing private-key material.
 
 ## Claims {#pda-claims}
 
 A PDA MUST contain:
 
-*  `sth` (source token hash): REQUIRED.  The base64url-encoded digest of the ASCII encoding of the Source Token, binding the PDA to one specific token.  Computed over the same encoded form the presenter conveys (for a JWS Source Token, its compact serialization).  This version of the specification fixes the digest algorithm as SHA-256; the value carries no algorithm indicator, and a Verifier computes the comparison digest with SHA-256.  A future version that needs algorithm agility would introduce an explicit indicator; a deployment that has cause to use a different algorithm before then MUST do so under a profile that states it, so that Delegator and Verifier agree.
+*  `iss`: REQUIRED.  The JWK Thumbprint URI {{RFC9278}} of the public key in the `jwk` header, using SHA-256.  This gives the key-based Delegator an unambiguous JWT issuer identifier and does not assert a human or client identity.  A Verifier MUST recompute and compare this value.  A consuming profile uses separate authenticated identifiers when it needs to identify the party controlling the key.
 
-*  `cnf`: REQUIRED.  The confirmation key being delegated to (the Recipient key), expressed per {{RFC7800}}.  The `jkt` member (JWK SHA-256 Thumbprint {{RFC7638}}) form is RECOMMENDED, matching DPoP {{RFC9449}}.
+*  `sth` (source token hash): REQUIRED.  The base64url encoding, without padding, of the SHA-256 digest of the ASCII octets of the exact encoded Source Token value, binding the PDA to one specific token.  For a compact JWT, this is its compact serialization.  The value is computed before transport encoding; for example, it is computed over the `subject_token` value before application/x-www-form-urlencoded encoding, and the Verifier computes it after form decoding.  The value MUST NOT be computed over decoded JWT claims, reserialized JSON, or any canonicalized form.  A Source Token whose encoded form is not an ASCII string requires a companion profile that defines the hash input.
+
+*  `cnf`: REQUIRED.  The Recipient key.  Its value MUST be a JSON object containing a `jkt` member whose value is the JWK SHA-256 Thumbprint {{RFC7638}} of an asymmetric public key, using the confirmation method defined by {{RFC9449}}.  This restriction gives every hop one unambiguous, algorithm-fixed key identifier.  Other RFC 7800 confirmation methods are not used in a PDA.
+
+*  `aud`: REQUIRED.  The intended Verifier or Verifiers for the PDA, represented as a case-sensitive string or array of strings as defined by {{RFC7519}}.  A Verifier MUST identify itself with at least one value in `aud`.  A consuming profile MUST define that identifier; {{token-exchange}} uses the authorization server issuer identifier.  This claim identifies the party that validates the PDA.  It is not the Token Exchange `audience` parameter and does not constrain the audience of a token requested in an exchange.
 
 *  `iat`: REQUIRED.  Time of issuance.
 
 *  `exp`: REQUIRED.  Expiration time.  A PDA SHOULD be short-lived.
 
-*  `jti`: REQUIRED.  A unique identifier for the PDA, for replay detection.
+*  `jti`: REQUIRED.  A unique identifier for the PDA within the namespace of its key-derived `iss`, for audit, revocation, and profile-defined one-time-use processing.  A repeated `jti` is not a replay by itself because a PDA can authorize more than one presentation during its validity interval; see {{security-replay}}.
 
 A PDA MAY contain:
 
 *  `nbf`: OPTIONAL.  Not-before time.
 
-*  `iss`: OPTIONAL.  An identifier for the Delegator, for audit and for standalone use where the Recipient or Verifier benefits from a human-meaningful delegator name.  The Delegator's authority derives from its key, not from this claim.
+*  `pda_constraints`: OPTIONAL.  A JSON object that restricts what the Recipient may request in a consuming protocol.  It can contain the following members; unknown members MUST be rejected unless a companion profile defines them:
 
-*  Attenuation caveats, each OPTIONAL and each restricting what the Recipient may request:
-
-   *  `aud`: the audiences the Recipient may target.
-   *  `scope`: the scope values the Recipient may request.
-   *  `resource`: the resource indicators {{RFC8707}} the Recipient may target.
-   *  `authorization_details`: the authorization details {{RFC9396}} the Recipient may request.
+   *  `audience`: an array of case-sensitive strings.  Every explicit or defaulted Token Exchange `audience` value in the resulting authorization MUST be a member of this array.
+   *  `resource`: an array of resource indicator URI strings {{RFC8707}}.  Every explicit or defaulted `resource` value in the resulting authorization MUST be a member of this array.
+   *  `scope`: a space-delimited string of scope values.  Every explicit or defaulted scope value in the resulting authorization MUST be a member of this set.
+   *  `authorization_details`: an array of authorization details {{RFC9396}}.  The resulting authorization MUST be no broader than these details under the type-specific semantics implemented by the Verifier; see {{attenuation}}.
 
 *  `deleg`: OPTIONAL.  A boolean.  When `true`, the Recipient MAY extend the chain by issuing a further PDA signed by the Recipient key ({{chains}}).  When absent or `false`, the Recipient MUST NOT be permitted to extend the chain, and a Verifier MUST reject a chain that extends past it.
 
-*  `pda`: OPTIONAL.  A nested prior PDA, present only in a chain, as described in {{chains}}.
+*  `pda`: OPTIONAL.  The immediately prior PDA, encoded as its complete compact JWS serialization string.  It is present only in a chain, as described in {{chains}}.  A decoded JSON object or an unsigned JWT Claims Set MUST NOT be accepted as this value.
+
+## Confirmation-Key Identification {#key-identification}
+
+The Verifier reduces the Source Token's confirmation key to one expected JWK SHA-256 Thumbprint.  A Source Token `cnf` containing `jkt` supplies that value directly.  A Source Token `cnf` containing a public asymmetric `jwk` supplies the value obtained by applying {{RFC7638}} with SHA-256.  A companion token profile MAY define another confirmation method only if it deterministically resolves to one asymmetric public JWK and defines how the Verifier obtains that key without trusting key material supplied by the presenter.
+
+The Verifier MUST reject a Source Token when its `cnf` identifies a symmetric key, identifies more than one key, cannot be resolved to exactly one asymmetric public key or SHA-256 thumbprint, or uses a confirmation method unsupported in the presentation context.  These restrictions do not change the Source Token's own profile; they define which Source Tokens this delegation mechanism can consume.
 
 ## Example {#pda-example}
 
-A Delegator holding the confirmation key of a key-bound ID Token delegates presentation to a Recipient key, restricted to one audience and a short lifetime.  The JOSE header carries the Delegator's public key; values are abbreviated.
+A Delegator holding the confirmation key of a key-bound ID Token delegates presentation to a Recipient key, restricted to one Token Exchange target audience and a short lifetime.  The JOSE header carries the Delegator's public key; values are abbreviated.
 
 ~~~json
 {
@@ -226,9 +239,13 @@ A Delegator holding the confirmation key of a key-bound ID Token delegates prese
 
 ~~~json
 {
+  "iss": "urn:ietf:params:oauth:jwk-thumbprint:sha-256:Q-init...",
   "sth": "0Ei...source-id-token-hash...",
   "cnf": { "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I" },
-  "aud": ["https://gateway.example"],
+  "aud": "https://idp.example",
+  "pda_constraints": {
+    "audience": ["https://gateway.example"]
+  },
   "iat": 1749825600,
   "exp": 1749825900,
   "jti": "b1f0c8a2-9d3e-4a2b-9f1c-8e7d6c5b4a30"
@@ -241,14 +258,14 @@ A Delegator holding the confirmation key of a key-bound ID Token delegates prese
 
 A single PDA delegates one hop, from the Source Token's confirmation key to a Recipient key.  A chain of PDAs delegates across multiple hops, each Recipient becoming the Delegator of the next, so long as each Delegator permitted extension via `deleg`.
 
-Chains are expressed by nesting.  Each PDA except the first carries the immediately prior PDA in its `pda` claim; the first (innermost) PDA has no `pda` claim and is signed by the Source Token's confirmation key.  The PDA the presenter conveys is the last (outermost) hop, whose `cnf` names the key the presenter proves possession of.
+Chains are expressed by nesting compact JWS strings.  Each PDA except the first carries the complete compact JWS serialization of the immediately prior PDA in its `pda` claim; the first (innermost) PDA has no `pda` claim and is signed by the Source Token's confirmation key.  The PDA the presenter conveys is the last (outermost) hop, whose `cnf.jkt` names the key the presenter proves possession of.  Each nested JWS is validated independently; decoding a nested value does not authenticate it.
 
 The Delegator of each hop MUST sign that hop with the confirmation key delegated to it by the previous hop:
 
 *  the innermost PDA MUST be signed by the Source Token's confirmation key;
-*  every other PDA MUST be signed by the key named in the `cnf` of the PDA nested in its `pda` claim.
+*  every other PDA MUST be signed by the key whose thumbprint is named in the `cnf.jkt` of the PDA nested in its `pda` claim.
 
-Every PDA in a chain MUST bind the same Source Token (identical `sth`).  A Verifier MUST enforce a maximum chain depth as a matter of local policy and MUST reject a chain in which the same confirmation key appears more than once (a cycle).  Attenuation is monotonic: the effective authority is the intersection of the Source Token's own constraints and the caveats of every PDA in the chain ({{attenuation}}).
+Every PDA in a chain MUST bind the same Source Token (identical `sth`), MUST authorize the current Verifier through `aud`, and MUST be temporally valid.  A Verifier MUST enforce local limits on both chain depth and total serialized chain size.  The ordered key path consists of the Source Token confirmation-key thumbprint followed by each PDA's `cnf.jkt`; every value in that path MUST be unique.  The appearance of a path key as the next PDA's required signing key is the expected link and is not a recurrence.  Attenuation is monotonic: the effective request constraints are the intersection of the `pda_constraints` objects in every PDA in the chain ({{attenuation}}).
 
 
 # Presentation and Proof of Possession {#presentation}
@@ -257,56 +274,56 @@ To use a Source Token under this mechanism, a presenter conveys, by whatever mea
 
 *  the Source Token;
 *  the outermost PDA of a Delegation Chain rooted in the Source Token's confirmation key; and
-*  a proof of possession of the key named in that outermost PDA's `cnf`.
+*  a proof of possession of the key named in that outermost PDA's `cnf.jkt`.
 
-The proof of possession MUST be one the Verifier accepts for the presentation context; a DPoP proof {{RFC9449}} is RECOMMENDED.  The presenter proves possession of the outermost `cnf` key only; it does not, and cannot, prove possession of the Source Token's confirmation key or of any intermediate key.
+The proof of possession MUST be one the Verifier accepts for the presentation context; a DPoP proof {{RFC9449}} is RECOMMENDED.  The public key established by that proof MUST have the JWK SHA-256 Thumbprint in the outermost `cnf.jkt`.  The presenter proves possession of the outermost Recipient key only; it does not, and cannot, prove possession of the Source Token's confirmation key or of any intermediate key.
 
-A PDA does not itself name the Verifier at which it may be used.  Scoping of a presentation to its intended Verifier is inherited from two sources: the Source Token, which is validated only where its issuer is trusted and which is itself typically audience-restricted, and the proof-of-possession method, whose channel binding ties the presentation to a specific request.  DPoP, for example, binds a proof to the HTTP method and URI of the request, so a captured Source Token and Delegation Chain cannot be replayed at a different endpoint by a party that does not also hold the outermost key.  A profile that uses a proof-of-possession method without such channel binding MUST provide its own binding of the presentation to the intended Verifier, because this document does not otherwise prevent a captured Source Token and chain from being replayed at any Verifier that trusts that Source Token.
+A PDA's `aud` claim names the Verifier at which it can be used.  This audience restriction is independent of request binding in the proof-of-possession method, and both MUST be checked.  DPoP, for example, binds a proof to the HTTP method and target URI of one request, while PDA `aud` expresses the Delegator's authorization for a verifier.  DPoP does not ensure integrity of the HTTP request body, so the Verifier MUST evaluate the Source Token and PDA constraints from the same request on which it validates the proof and MUST protect that request with TLS.
 
 
 # Validation {#validation}
 
 Given a Source Token, a Delegation Chain, and a presenter proof of possession, a Verifier MUST perform the following.  A failure at any step means the presentation is not authorized and MUST be rejected.
 
-1. Validate the Source Token according to its own token type and profile, including its signature, issuer, and temporal validity.  Confirm that the Source Token carries a `cnf` claim; a Source Token without a confirmation key is out of scope ({{scope}}) and the presentation MUST be rejected.  Extract its confirmation key and compute that key's JWK Thumbprint {{RFC7638}}; call it the expected delegator key for the innermost hop.
+1. Confirm that an applicable consuming profile and local policy permit presenter delegation for this Source Token type and presentation context.  Validate the Source Token according to its own token type and profile, including its cryptographic protection, issuer, temporal validity, and all checks the consuming profile does not explicitly replace.  Confirm that the Source Token carries a supported `cnf` claim and reduce it to exactly one expected JWK SHA-256 Thumbprint per {{key-identification}}.  A Source Token without a supported asymmetric confirmation key MUST be rejected.
 
 2. For each PDA in the chain, from innermost to outermost:
 
-   1. Confirm `typ` is `pda+jwt` and `alg` is an accepted asymmetric algorithm.
+   1. Parse the protected header, Claims Set, `cnf`, and `pda_constraints` (when present) without accepting duplicate JSON member names.  Confirm `typ` is `pda+jwt` and `alg` is an accepted asymmetric algorithm.
 
-   2. Determine the PDA's signing key: from its `jwk` header parameter, or from the delegated token's `cnf` when the full key is available.  Confirm that the thumbprint of this signing key equals the expected delegator key for this hop (for the innermost PDA, the Source Token's confirmation key; otherwise, the `cnf` key of the PDA nested in this PDA's `pda` claim).  Verify the JWS signature under this key.
+   2. Parse the public `jwk` header parameter, reject private key material, compute its JWK SHA-256 Thumbprint, and confirm that it equals the expected thumbprint for this hop.  For the innermost PDA, the expected value comes from the Source Token; for every later PDA, it is the `cnf.jkt` of the immediately prior PDA.  Confirm that `iss` is the SHA-256 JWK Thumbprint URI for the same header key.  Verify the JWS signature under this key using the accepted algorithm named by `alg`.
 
    3. Confirm `sth` equals the digest of the Source Token being presented.
 
-   4. Verify `iat`, `exp`, and `nbf` (if present), and reject a replayed `jti` within the acceptance window.
+   4. Confirm that `aud` identifies this Verifier.  Verify `iat`, `exp`, and `nbf` (if present), applying the Verifier's clock-skew and maximum-lifetime policy.  Confirm that `jti` is present and syntactically acceptable.  Apply one-time-use or revocation state only when required by the consuming profile or local policy.
 
-   5. If this is not the innermost PDA, confirm that the prior PDA's `deleg` is `true`; otherwise reject.
+   5. Confirm that `cnf` contains a syntactically valid `jkt`.  If this is not the innermost PDA, confirm that the prior PDA's `deleg` is `true`; otherwise reject.
 
-   6. Set the expected delegator key for the next hop to the thumbprint of this PDA's `cnf` key.
+   6. Set the expected thumbprint for the next hop to this PDA's `cnf.jkt`.
 
-3. Enforce chain-wide constraints: reject if the depth exceeds local policy, or if any confirmation key appears more than once.
+3. Enforce chain-wide constraints: reject if the depth or total serialized size exceeds local policy; if any thumbprint recurs in the ordered key path consisting of the Source Token confirmation key followed by each `cnf.jkt`; if any PDA has a different `sth`; or if a `pda_constraints` object contains an unknown member not defined by an applicable profile.
 
-4. Verify the presenter's proof of possession against the outermost PDA's `cnf` key.
+4. Verify the presenter's proof of possession and confirm that the proof's public key thumbprint equals the outermost PDA's `cnf.jkt`.
 
-5. Compute the effective authority as the intersection of the Source Token's own constraints and the caveats of every PDA in the chain ({{attenuation}}).  Confirm that the presenter's request lies within the effective authority.
+5. Compute the effective request constraints across every PDA in the chain as specified in {{attenuation}}.  Confirm that the request lies within those constraints and is independently authorized by the Source Token's consuming profile and every other authorization input.
 
-On success, the Verifier treats the Source Token's proof-of-possession requirement as satisfied by the presenter, who is the holder of the outermost `cnf` key acting under authority delegated from the Source Token's confirmation-key holder, bounded by the effective authority.
+On success, the Verifier treats the Source Token's proof-of-possession requirement for this presentation as satisfied by the holder of the outermost Recipient key, acting under authority delegated from the Source Token's confirmation-key holder and bounded by the effective request constraints.  This result establishes control of an authorized key, not the presenter's application-level identity; consuming profiles apply their own client or actor authentication where required.
 
 
 # Attenuation {#attenuation}
 
-Each PDA restricts its Recipient to a subset of the authority the Delegator itself holds; caveats narrow and never broaden.  A PDA's `aud`, `scope`, `resource`, and `authorization_details` caveats each bound what the Recipient may request along that dimension.
+Each PDA can restrict what its Recipient may request through `pda_constraints`.  A constraint is an upper bound, not a grant.  Successful PDA validation never overrides the Source Token's own authorization rules, an administered relationship, a `may_act` claim, client policy, user authorization, or the Verifier's exchange-time policy.
 
-A Verifier MUST compute the effective authority for a presentation as the intersection, across the Source Token's own constraints (where it carries any) and the caveats of every PDA in the chain, of each carried dimension:
+A Verifier MUST compute the effective request constraints as the intersection of each dimension carried by every PDA in the chain:
 
-*  For `aud` and `resource`, the effective set is the intersection of the sets named at each level; a value the presenter requests MUST appear at every level that constrains it.
-*  For `scope`, the effective scope is the intersection of the scopes permitted at each level.
-*  For `authorization_details`, the effective set is those authorization details permitted at every level that constrains them, per the matching rules of {{RFC9396}}.
-*  A level that omits a given caveat does not constrain that dimension and does not broaden a narrower constraint present at another level.
+*  For `audience` and `resource`, the effective set is the intersection of the arrays named at each level; every explicit or defaulted value in the resulting authorization MUST appear at every level that constrains it.
+*  For `scope`, the effective scope is the intersection of the scopes permitted at each level; a scope the Verifier would otherwise apply by default is subject to that intersection and MUST NOT be granted if it lies outside it.
+*  For `authorization_details`, the resulting authorization MUST be no broader than the details at every level that constrains them.  {{RFC9396}} does not define a generic comparison algorithm for arbitrary authorization detail types.  The Verifier MUST use semantics defined for each authorization detail type it accepts and MUST reject the request if it cannot determine containment safely.  Exact semantic equality is sufficient but is not required where type-specific rules define a narrower request.
+*  A PDA that omits a dimension does not constrain that dimension and does not broaden a narrower constraint in another PDA.
 
-Because each hop can only narrow, and the innermost Delegator holds no more authority than the Source Token confers, no chain can yield a Recipient more authority than the Source Token confers: recipient authority is a subset of delegator authority, which is a subset of the Source Token's.  A PDA MUST NOT be interpreted as granting any authority the Source Token does not carry; the mechanism transfers and narrows presentation authority and never creates it.
+The Source Token's claims are not automatically members of these request dimensions.  In particular, an ID Token's `aud` identifies the relying party for that ID Token; it is not a limit on the `audience` of a new token requested through Token Exchange.  A consuming profile MAY map a Source Token claim into an effective request constraint only when it explicitly defines that claim as constraining the same semantic dimension.
 
-Where the Source Token does not itself constrain a dimension (for example, an ID Token carries no authorization scope), the effective constraint on that dimension is whatever the PDAs impose.  This bounds what the Recipient may request; it does not by itself grant anything.  The consuming protocol's own authorization decision, such as the exchange-time policy of an authorization server ({{token-exchange}}), remains authoritative over what is ultimately issued.
+Because a PDA only authorizes presentation and narrows requests, no chain can create authority the Source Token or consuming protocol does not provide.  The consuming protocol's authorization decision, such as the CCDR, optional `may_act`, and exchange-time policy in the Cross-Client Delegation profile, remains authoritative over what is ultimately issued.
 
 
 # Use with OAuth 2.0 Token Exchange {#token-exchange}
@@ -317,74 +334,97 @@ This mechanism is used with OAuth 2.0 Token Exchange {{RFC8693}} to let a party 
 
 In addition to the Token Exchange parameters, the request carries:
 
-*  `presenter_delegation`: REQUIRED for this mechanism.  The outermost PDA of a Delegation Chain rooted in the `subject_token`'s confirmation key ({{iana-parameter}}).
+*  `presenter_delegation`: REQUIRED when the requester uses this mechanism.  Its value is the compact JWS serialization of the outermost PDA in a Delegation Chain rooted in the `subject_token`'s confirmation key ({{iana-parameter}}).  The parameter MUST NOT occur more than once.
 
-The requesting party MUST demonstrate proof of possession of the outermost PDA's `cnf` key on the request; a DPoP proof {{RFC9449}} in the `DPoP` header is RECOMMENDED.  The `subject_token` is the Source Token.
+The requesting party MUST demonstrate proof of possession of the outermost PDA's `cnf.jkt` key on the same request; a DPoP proof {{RFC9449}} in the `DPoP` header is RECOMMENDED.  The `subject_token` is the Source Token.  Every PDA's `aud` MUST contain the authorization server's issuer identifier.  The `aud` value does not contain the token endpoint URI and is distinct from both the DPoP `htu` claim and the Token Exchange `audience` request parameter.
 
 ## Processing {#te-processing}
 
-The authorization server is the Verifier.  It MUST validate the `subject_token`, the Delegation Chain in `presenter_delegation`, and the request's proof of possession per {{validation}}, and MUST confirm that the requested `audience`, `resource`, `scope`, and `authorization_details` lie within the effective authority ({{attenuation}}).
+The authorization server is the Verifier.  It MUST validate the `subject_token`, the Delegation Chain in `presenter_delegation`, and the request's proof of possession per {{validation}}, and MUST confirm that the explicit or defaulted `audience`, `resource`, `scope`, and `authorization_details` of the resulting authorization lie within the effective request constraints ({{attenuation}}).  It MUST also authorize those values under the Token Exchange policy and every applicable profile; PDA constraints do not grant them.  A token issued on success MUST NOT carry authorization broader than the checked result.
 
 On success, the authorization server MAY issue the requested token.  When it does:
 
-*  it SHOULD sender-constrain the issued token to the outermost `cnf` key, so that proof of possession continues unbroken from the Source Token to the issued token; and
+*  it SHOULD sender-constrain the issued token to the outermost Recipient key, so that proof of possession continues unbroken from the Source Token to the issued token; and
 
-*  because the Delegator cryptographically authorized the presentation, the authorization server MAY record the Delegator (and prior Delegators in a chain) as prior actors in the issued token's `act` claim per {{RFC8693}} and {{I-D.mcguinness-oauth-actor-profile}}.  Absent this mechanism or an equivalent, a prior actor MUST NOT be recorded on the basis of the token audience alone.
+*  because the root Delegator cryptographically authorized the presentation, a consuming profile MAY permit the authorization server to record that party as a prior actor in the issued token's `act` claim per {{RFC8693}} and {{I-D.mcguinness-oauth-actor-profile}}.  It can do so only when the profile independently maps the signing key to a validated actor identity, as the Cross-Client Delegation composition does for the Initiator.  A key thumbprint alone is not an actor identity, and intermediate keys MUST NOT be converted into prior actors without equivalent identity evidence.  Absent this mechanism or equivalent authenticated evidence, a prior actor MUST NOT be recorded on the basis of the Source Token audience alone.
 
 ## Errors {#te-errors}
 
-Errors are returned per {{RFC8693, Section 2.2.2}} and {{RFC6749, Section 5.2}}.  A missing or invalid `presenter_delegation`, a chain that does not validate, a proof-of-possession failure, or a request outside the effective authority uses the `invalid_request` error code, except that an unacceptable `audience` or `resource` uses `invalid_target`.  A proof-of-possession or DPoP failure follows {{RFC9449}}.
+Errors are returned per {{RFC8693, Section 2.2.2}} and {{RFC6749, Section 5.2}}.  When this mechanism is required by the selected profile, a missing or invalid `presenter_delegation`, a chain that does not validate, a proof-of-possession failure, or a request outside the effective constraints uses the `invalid_request` error code, except that an unacceptable `audience` or `resource` SHOULD use `invalid_target` as specified by {{RFC8693}}.  DPoP-specific error processing follows {{RFC9449}}.  Error descriptions SHOULD NOT disclose which hop, key, administered relationship, or constraint caused rejection.
+
+## Authorization Server Metadata {#metadata}
+
+An authorization server advertises support in its metadata {{RFC8414}} with the following OPTIONAL member:
+
+`presenter_delegation_supported`:
+: Boolean value indicating support for the `presenter_delegation` Token Exchange parameter and the PDA validation rules in this document.  The value is `true` when supported.  If omitted, support is not indicated.  This metadata does not guarantee that any particular Source Token, proof method, signing algorithm, chain depth, or request will be accepted.
 
 
 # Use in Delegation Profiles {#profiles}
 
-A delegation profile consumes this mechanism as its proof that a specific presentation was authorized by the confirmation-key holder.  The following applies to the Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegation}}; other profiles compose analogously.
+A delegation profile consumes this mechanism as its proof that a specific presentation was authorized by the confirmation-key holder.  The following illustrates the Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegation}}; other profiles compose analogously.  The normative binding for that composition, including the definitions this section requires a consuming profile to provide, is given by the Cross-Client Delegation profile itself.
 
 *  The Source Token is the Initiator's key-bound Identity Assertion; the Initiator is the Delegator and holds its confirmation key.  The Delegate is the Recipient and the presenter.
 
-*  A valid Delegation Chain is an IdP-verifiable per-assertion artifact and an authenticated, correlated handoff at once: it satisfies both properties that profile's authorization model distinguishes.  It therefore raises an exchange to the profile's stronger, assertion-bound operation.
+*  A valid Delegation Chain is an IdP-verifiable per-assertion artifact and cryptographic evidence that the Initiator's confirmation key authorized handoff of that exact encoded assertion to the Delegate's presentation key.  It therefore supplies both token-endpoint authorization and authenticated, correlated handoff evidence in that profile's two-axis authorization model.  Application-layer transport can still require its own confidentiality, request correlation, and user-session checks.
 
-*  The chain is conjunctive with that profile's administered relationship: both the relationship and the chain (and exchange-time policy) MUST authorize the exchange.  A chain narrows; it never substitutes for the administered relationship, and the administered relationship never overrides a chain's caveats.
+*  The chain is conjunctive with that profile's administered CCDR, a `may_act` claim when present, Delegate client and actor authentication, and exchange-time policy.  It substitutes for none of them.  No other input overrides the chain's constraints.
 
 *  Because the Initiator cryptographically authorized the handoff, the IdP MAY record the Initiator as a nested prior actor, which that profile otherwise forbids.
 
-*  A key-bound Identity Assertion, which the base Cross-Client Delegation profile excludes because the Delegate cannot present it, becomes usable under this mechanism: the Delegate presents its own key and the Initiator-signed chain in place of the Initiator's key.
+*  A key-bound Identity Assertion, which the base Cross-Client Delegation profile excludes because the Delegate cannot directly prove possession of the Initiator's key, becomes usable when the two specifications are composed: the Delegate proves possession of its own Recipient key and supplies the Initiator-signed chain.  The Identity Assertion's normal proof requirement is continued through the chain, not ignored or replaced with a bearer exception.
 
-A profile that uses this mechanism MUST specify how the chain's effective authority relates to the profile's own authorization inputs, and MUST NOT allow a chain to broaden them.
+A profile that uses this mechanism MUST define its Verifier audience identifier, its accepted proof-of-possession method, how the Delegator authenticates the intended Recipient key, how Source Token confirmation methods are reduced to a JWK thumbprint, how its request fields map to `pda_constraints`, and how those constraints combine with the profile's own authorization inputs.  It MUST NOT allow a chain to broaden another input.
 
 
 # Security Considerations {#security}
 
 The OAuth 2.0 Security Best Current Practice {{RFC9700}} and the JWT best practices {{RFC8725}} apply in addition to this section.
 
+## Explicit Acceptance of Delegation {#security-opt-in}
+
+Key binding ordinarily assures a verifier that the party presenting a token controls the key selected when the token was issued.  Presenter delegation deliberately extends that assurance to another key authorized by the original key holder.  This is a change in authorization semantics, not a generic consequence of RFC 7800.  Verifiers therefore MUST opt in for each applicable Source Token profile and context, and MUST continue to enforce issuer policy and consuming-profile authorization.  A PDA is not a signal that an otherwise unaware token profile must accept delegation.
+
 ## No Key Leaves Its Holder {#security-keys}
 
-The mechanism never transfers a private key.  Each Delegator signs with a key it holds and delegates to a Recipient's public key; the Recipient proves possession of its own key.  Compromise of a Delegator's key lets an attacker mint delegations that the Delegator could have made, bounded by what the delegated token and any inherited caveats permit; it does not expose any Recipient key.  Confirmation keys SHOULD be protected commensurately with the authority the tokens they bind can command, and SHOULD be per-instance to limit blast radius.
+The mechanism never transfers a private key.  Each Delegator signs with a key it holds and delegates to a Recipient's public key; the Recipient proves possession of its own key.  Compromise of a Delegator's key lets an attacker mint delegations that the Delegator could have made, bounded by what the delegated token and any inherited constraints permit; it does not expose any Recipient key.  Confirmation keys SHOULD be protected commensurately with the authority the tokens they bind can command, and SHOULD be per-instance to limit blast radius.
+
+## Recipient Key Authentication {#security-recipient-key}
+
+A PDA authorizes a key; it does not establish who controls that key.  Before signing, a Delegator MUST obtain the intended Recipient's public key or thumbprint through an authenticated, integrity-protected process that provides the assurance required by the application.  A consuming profile MUST define that process or identify the deployment mechanism that supplies it.  If an attacker substitutes its own key before the PDA is signed, the resulting PDA validly delegates to the attacker.  Separate client or actor authentication at the Verifier remains necessary whenever the application authorizes a named party rather than any holder of the Recipient key.
 
 ## Replay and Freshness {#security-replay}
 
-A captured PDA can be reused within its validity window by whoever also holds the Recipient key it names.  Binding a PDA to a specific Source Token (`sth`), to a specific Recipient key (`cnf`), and to a short `exp` with a `jti` limits this.  Because the Recipient must additionally prove possession of the `cnf` key, a captured PDA alone is not usable.  Verifiers MUST enforce `exp` and SHOULD maintain a `jti` replay cache over the acceptance window.  The offline nature of the mechanism means the Delegator's issuer is not consulted at presentation; revocation of a delegation therefore relies on short lifetimes rather than on a revocation lookup, unless the consuming profile adds one.
+A captured PDA can be reused within its validity window only by a party that also controls the Recipient key and can satisfy the presentation proof.  Binding a PDA to a specific Source Token (`sth`), Verifier (`aud`), and Recipient key (`cnf.jkt`), together with a short `exp`, limits replay.  The proof method provides request-level replay protection; with DPoP, the Verifier applies the `jti`, `iat`, nonce (when used), HTTP method, and target URI checks of {{RFC9449}}.
 
-## Attenuation is a Floor, Not a Ceiling {#security-attenuation}
+A PDA's own `jti` identifies the delegation, not an individual presentation.  A Verifier MUST NOT reject a second presentation solely because the same PDA `jti` was successfully used before unless the consuming profile or local policy declares PDAs to be one-time-use.  A one-time-use policy needs atomic replay-cache processing and must define how retries are handled.  The offline nature of the mechanism means the Delegator is not consulted at presentation; revocation therefore relies on short lifetimes unless the consuming profile defines a revocation lookup keyed by `iss` and `jti`.
 
-Caveats only ever narrow.  A Verifier MUST compute effective authority as the intersection across the Source Token and all PDAs ({{attenuation}}) and MUST NOT let a caveat present at one level broaden a narrower constraint at another.  An implementation that treated a PDA caveat as a grant would create authority the Source Token never carried; this is forbidden.
+## Constraints Are Limits, Not Grants {#security-attenuation}
+
+Constraints only ever narrow.  A Verifier MUST compute effective request constraints across all PDAs ({{attenuation}}) and MUST NOT let omission or a broader value at one level override a narrower constraint at another.  It then applies all non-PDA authorization inputs independently.  Treating `pda_constraints` as a grant, or intersecting unrelated claims merely because they have similar names, can create authority or make the mechanism unusable; both are forbidden.
+
+For `authorization_details`, generic JSON subset or object-equality logic is not a safe authorization comparison.  A Verifier needs type-specific containment semantics and fails closed when it does not understand them.
 
 ## Downgrade and Confusion {#security-downgrade}
 
-A Verifier MUST NOT accept a bearer presentation of a key-bound Source Token merely because a PDA is absent; a key-bound token requires either its own confirmation-key proof or a valid Delegation Chain.  The `pda+jwt` explicit type, and rejection of `none` and symmetric algorithms, prevent a PDA from being confused with, or substituted for, an ID Token, an access token, or a DPoP proof, and prevent those from being accepted as a PDA.  A Verifier MUST validate each artifact under the rules for its position.
+A Verifier MUST NOT accept a bearer presentation of a key-bound Source Token merely because a PDA is absent; a key-bound token requires either its own confirmation-key proof or a valid Delegation Chain.  The `pda+jwt` explicit type, required key-derived `iss`, and rejection of `none` and symmetric algorithms prevent a PDA from being confused with, or substituted for, an ID Token, an access token, or a DPoP proof, and prevent those from being accepted as a PDA.  A Verifier MUST validate each artifact under the rules for its position.  Delegators SHOULD use a confirmation key dedicated to key-bound tokens, and signing APIs MUST bind the `pda+jwt` type and intended operation so that an attacker cannot use a generic signing oracle to obtain a PDA.
+
+## Verifier and Request Binding {#security-verifier}
+
+Proof of possession and audience restriction provide different protections.  The PDA `aud` restricts which Verifier can accept a chain, while DPoP binds the proof to an HTTP method and target URI.  A Verifier MUST check both.  Because DPoP does not cover the HTTP body, TLS and normal token-endpoint request processing remain necessary, and intermediaries must not mix a proof from one request with parameters from another.
 
 ## Chain Depth and Cycles {#security-chains}
 
-Unbounded chains and cycles enable resource-exhaustion and confusion attacks.  A Verifier MUST bound chain depth by local policy and MUST reject a chain in which any confirmation key recurs.  Each additional hop widens the set of parties that participated in authorizing a presentation; deployments SHOULD keep chains short and SHOULD disable further delegation (`deleg` absent or `false`) unless a hop genuinely requires it.
+Unbounded nesting, oversized JWTs, and cycles enable resource-exhaustion and confusion attacks.  A Verifier MUST bound chain depth and total serialized size before performing unbounded recursive processing and MUST reject a chain in which a thumbprint recurs in the ordered path from the Source Token confirmation key through each PDA's Recipient key.  The use of one path key to sign the next hop is the required link, not a cycle.  Each additional hop widens the set of parties that participated in authorizing a presentation; deployments SHOULD keep chains short and SHOULD disable further delegation (`deleg` absent or `false`) unless a hop genuinely requires it.
 
 ## Trust Domains {#security-domains}
 
-A Verifier can validate a chain only if it can obtain and trust the Source Token's confirmation key and the token itself.  In the single-issuer case, where the Verifier issued the Source Token, this holds directly.  Across trust domains, the Verifier must reach and trust the Source Token's issuer; establishing that trust is out of scope, and is the same cross-domain problem other delegation work faces.
+A Verifier can validate a chain only if it can validate the Source Token and reduce its confirmation method to the expected root-key thumbprint without trusting presenter-supplied key resolution.  In the single-issuer case, where the Verifier issued the Source Token, this holds directly.  Across trust domains, the Verifier must trust the Source Token's issuer, its confirmation method, and any profile-defined key-resolution process.  Establishing that trust is out of scope.
 
 
 # Privacy Considerations {#privacy}
 
-A Delegation Chain discloses to the Verifier the sequence of keys, and any `iss` identifiers, that participated in authorizing a presentation.  This reveals the delegation graph for that exchange.  Deployments SHOULD keep chains short and SHOULD omit optional `iss` claims where a human-meaningful delegator name is not needed.
+A Delegation Chain discloses to the Verifier the sequence of keys that participated in authorizing a presentation.  The required key-derived `iss` values do not add a human identity, but they and the embedded public JWKs expose stable correlation handles and reveal the delegation graph for that exchange.  Deployments SHOULD keep chains short.
 
 Recipient keys can serve as correlation handles across presentations.  A Recipient MAY use a fresh per-delegation key to limit correlation, at the cost of additional key management.  Confirmation keys and their thumbprints are not identity claims, but a Verifier able to link a key to a party can infer participation; the considerations of {{RFC9449}} for DPoP keys apply.
 
@@ -393,7 +433,7 @@ Recipient keys can serve as correlation handles across presentations.  A Recipie
 
 ## Media Type Registration {#iana-media-type}
 
-This document requests registration of the following media type in the "Media Types" registry, for use as the value of the `typ` JOSE header parameter of a Presenter Delegation Assertion.
+This document requests registration of the following media type in the "Media Types" registry using the template of {{RFC6838}}, for use as the value of the `typ` JOSE header parameter of a Presenter Delegation Assertion.
 
 *  Type name: application
 *  Subtype name: pda+jwt
@@ -401,26 +441,47 @@ This document requests registration of the following media type in the "Media Ty
 *  Optional parameters: N/A
 *  Encoding considerations: binary; a PDA is a JWT, a series of base64url-encoded values with period separators.
 *  Security considerations: See {{security}} of this document and Section 11 of {{RFC7519}}.
+*  Interoperability considerations: N/A
+*  Published specification: this document
+*  Applications that use this media type: OAuth and OpenID Connect applications delegating presentation of proof-of-possession tokens
+*  Fragment identifier considerations: N/A
+*  Additional information: Magic number(s): N/A; File extension(s): N/A; Macintosh file type code(s): N/A
+*  Person and email address to contact for further information: Karl McGuinness, public@karlmcguinness.com
+*  Intended usage: COMMON
+*  Restrictions on usage: N/A
+*  Author: Karl McGuinness
 *  Change controller: IETF
-*  Specification Document: this document
+*  Provisional registration: No
 
 ## JSON Web Token Claims Registration {#iana-claims}
 
-This document requests registration of the following claims in the "JSON Web Token Claims" registry established by {{RFC7519}}.  The `cnf`, `aud`, `scope`, `authorization_details`, `iss`, `iat`, `exp`, `nbf`, and `jti` claims are already registered and are used here without new registration.
+This document requests registration of the following claims in the "JSON Web Token Claims" registry established by {{RFC7519}}.  The `cnf`, `aud`, `iss`, `iat`, `exp`, `nbf`, and `jti` claims are already registered and are used here without new registration.
 
 *  Claim Name: `sth`
 *  Claim Description: Source Token Hash; base64url-encoded SHA-256 digest of the token whose presentation authority a Presenter Delegation Assertion delegates
-*  Change Controller: IETF
+*  Change Controller: IESG
 *  Specification Document: {{pda-claims}} of this document
 
 and:
 
 *  Claim Name: `deleg`
 *  Claim Description: Whether the recipient of a Presenter Delegation Assertion may extend the delegation chain
-*  Change Controller: IETF
+*  Change Controller: IESG
 *  Specification Document: {{pda-claims}} of this document
 
-The `pda` claim carries a nested Presenter Delegation Assertion within the JSON object of a PDA; as a member scoped to that object it does not require a separate top-level registration.
+and:
+
+*  Claim Name: `pda`
+*  Claim Description: Immediately prior Presenter Delegation Assertion, encoded as a compact JWS string
+*  Change Controller: IESG
+*  Specification Document: {{pda-claims}} of this document
+
+and:
+
+*  Claim Name: `pda_constraints`
+*  Claim Description: Request constraints imposed by a Presenter Delegation Assertion
+*  Change Controller: IESG
+*  Specification Document: {{pda-claims}} of this document
 
 ## OAuth Parameters Registration {#iana-parameter}
 
@@ -428,8 +489,17 @@ This document requests registration of the following value in the "OAuth Paramet
 
 *  Parameter name: `presenter_delegation`
 *  Parameter usage location: token request
-*  Change Controller: IETF
+*  Change Controller: IESG
 *  Specification Document: {{te-request}} of this document
+
+## OAuth Authorization Server Metadata Registration {#iana-metadata}
+
+This document requests registration of the following value in the "OAuth Authorization Server Metadata" registry established by {{RFC8414}}.
+
+*  Metadata Name: `presenter_delegation_supported`
+*  Metadata Description: Boolean indicating authorization server support for Presenter Delegation Assertions in OAuth 2.0 Token Exchange
+*  Change Controller: IESG
+*  Specification Document: {{metadata}} of this document
 
 
 --- back
@@ -438,7 +508,7 @@ This document requests registration of the following value in the "OAuth Paramet
 
 This informative example shows the mechanism used by the Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegation}}, so that a Delegate can present a key-bound ID Token issued to an Initiator.
 
-The Initiator holds a key-bound ID Token bound to `K_init` (its `cnf` is `jkt(K_init)`).  It signs a PDA with `K_init` delegating to the Delegate's key `K_del`, restricted to the gateway audience and a five-minute lifetime (the {{pda-example}} example).  The Initiator conveys the ID Token and the PDA to the Delegate.
+The Initiator holds a key-bound ID Token bound to `K_init` (OpenID Connect Key Binding represents the key as `cnf.jwk`).  Before the exchange, the Delegate conveys the public JWK or thumbprint for `K_del` to the Initiator over an authenticated, integrity-protected channel, and the Initiator verifies that it belongs to the intended Delegate.  The exact key-distribution channel is deployment-specific and is a required part of the Cross-Client Delegation composition.  The Initiator then signs a PDA with `K_init` delegating to `K_del`.  The PDA identifies the IdP as Verifier, restricts the Token Exchange target audience to the gateway, and has a five-minute lifetime (the {{pda-example}} example).  The Initiator conveys the exact encoded ID Token and the PDA to the Delegate.
 
 The Delegate performs a Token Exchange at the IdP:
 
@@ -454,12 +524,12 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 &actor_token=<Delegate client assertion>
 &actor_token_type=urn:ietf:params:oauth:token-type:jwt
 &audience=https://gateway.example
-&presenter_delegation=<PDA signed by K_init, cnf=jkt(K_del)>
+&presenter_delegation=<PDA by K_init, aud=IdP, cnf.jkt=jkt(K_del)>
 &client_assertion_type=<jwt-bearer-client-assertion-type>
 &client_assertion=<Delegate client assertion>
 ~~~
 
-The IdP validates the ID Token, confirms the PDA is signed by the ID Token's `cnf` key (`K_init`), confirms the requested audience is within the PDA's `aud` caveat, and verifies the Delegate's DPoP proof of `K_del`.  Because the Initiator's key authorized the handoff, the IdP may record the Initiator as a nested prior actor and issues a token sender-constrained to `K_del`:
+The IdP validates the ID Token under the composed Cross-Client Delegation rules, reduces its `cnf.jwk` to `jkt(K_init)`, confirms the PDA is signed by `K_init` and identifies the IdP in `aud`, confirms the requested audience is within `pda_constraints.audience`, and verifies the Delegate's DPoP proof of `K_del`.  It also authenticates the Delegate as both client and actor, validates the CCDR and `may_act` when present, and applies exchange-time policy.  Because the PDA establishes that the Initiator's key authorized this exact handoff, the IdP may record the Initiator as a nested prior actor and issues a token sender-constrained to `K_del`:
 
 ~~~json
 {
@@ -484,7 +554,7 @@ A captured copy of the Initiator's ID Token is useless to an attacker without bo
 # Acknowledgments
 {:numbered="false"}
 
-This mechanism is a public-key attenuation chain in the tradition of SPKI/SDSI {{RFC2693}} and macaroons {{Macaroons}}, specialized to proof-of-possession transfer for OAuth and OpenID Connect tokens.  It is designed to serve the presenter-transition needs of the OAuth Actor Profile {{I-D.mcguinness-oauth-actor-profile}} and the Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegation}}, and to compose with OpenID Connect Key Binding {{OpenID.KeyBinding}}, DPoP {{RFC9449}}, and Token Exchange {{RFC8693}}.
+This mechanism is a public key attenuation chain in the tradition of SPKI/SDSI {{RFC2693}} and macaroons {{Macaroons}}, specialized to continuing proof of possession across a presenter change for OAuth and OpenID Connect tokens.  It is designed to serve the presenter-transition needs of the OAuth Actor Profile {{I-D.mcguinness-oauth-actor-profile}} and the Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegation}}, and to compose with OpenID Connect Key Binding {{OpenID.KeyBinding}}, DPoP {{RFC9449}}, and Token Exchange {{RFC8693}}.
 
 
 # Document History
@@ -494,4 +564,4 @@ This mechanism is a public-key attenuation chain in the tradition of SPKI/SDSI {
 
 -00
 
-* Initial revision.  Defines the Presenter Delegation Assertion, delegation chains, attenuation, validation, use with Token Exchange, and composition with delegation profiles.
+* Initial revision.  Defines the Presenter Delegation Assertion, delegation chains, attenuation, validation, use with Token Exchange, and composition with delegation profiles.  Separates the PDA verifier audience from Token Exchange target constraints, defines unambiguous key-thumbprint and nested-JWS processing, and aligns the Cross-Client Delegation composition with CCDR, `may_act`, actor authentication, and exchange-time policy.
