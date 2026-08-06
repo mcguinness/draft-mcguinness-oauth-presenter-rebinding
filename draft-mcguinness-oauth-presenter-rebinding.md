@@ -247,15 +247,17 @@ The following abbreviated PRA authorizes `K_recipient` to present one Source Tok
 
 The object can contain:
 
-*  `audience`: an array of case-sensitive Token Exchange audience strings.  Every explicit audience requested, and every audience placed in an issued token as a result of the exchange, MUST be a member of this array.
+*  `audience`: an array of case-sensitive Token Exchange audience strings.  A requested or issued audience is within this limit when it is a member of the array.
 
-*  `resource`: an array of resource indicator URI strings {{RFC8707}}.  Each member MUST be an absolute URI without a fragment component, as required by {{RFC8707, Section 2}}.  Every explicit resource requested, and every resource authorization represented in the issued token as a result of the exchange, MUST equal a member of this array by simple string comparison.  This specification defines no prefix, path-hierarchy, or wildcard relationship between resource indicators.  An authorization server that cannot determine containment by string comparison MUST reject the request.
+*  `resource`: an array of resource indicator URI strings {{RFC8707}}.  Each member MUST be an absolute URI without a fragment component, as required by {{RFC8707, Section 2}}.  A requested or issued resource is within this limit when it equals a member of the array by simple string comparison.  This specification defines no prefix, path-hierarchy, or wildcard relationship between resource indicators.  An authorization server that cannot determine containment by string comparison MUST reject the request.
 
-*  `scope`: a space-delimited set of scope values.  Every explicit scope requested, and every scope granted in the issued token, MUST be a member of this set.
+*  `scope`: a space-delimited set of scope values.  A requested or granted scope value is within this limit when it is a member of the set.
 
-When a member is absent, the PRA places no restriction on that dimension.  Defaults selected by the authorization server are still subject to a present limit: an omitted request parameter MUST NOT cause the server to issue an audience, resource authorization, or scope outside the corresponding limit.
+When a member is absent, the PRA places no restriction on that dimension.
 
-The authorization server MAY issue a result narrower than both the request and the Presenter Limits.  It MUST NOT issue a result broader than either.
+When a member is present, the corresponding Token Exchange request parameter MUST be present in the request, and every value it carries MUST be within the limit.  An authorization server MUST reject a request that omits a parameter for which the PRA carries a limit.  Requiring the requester to state what it wants removes the case in which an authorization-server default, rather than the request, determines the result for a limited dimension.  A Recipient Presenter holds the PRA and can therefore read each limit it must request within.
+
+The authorization server MAY issue a result narrower than both the request and the Presenter Limits.  It MUST NOT issue a result broader than either.  Together with the preceding paragraph these rules confine the issued token: the request is explicit for every limited dimension, the request is within the limit, and the issued authorization is within the request.  An authorization server whose issuance cannot produce a value outside the request for a limited dimension therefore satisfies this section by comparing the request against the limit.  {{security-limits}} states the requirement that remains on the issued authorization.
 
 This specification does not define limits for `authorization_details`; a profile that needs such limits must define type-specific containment rules in an extension and register the member per {{iana-limits}}.  A profile whose base already carries `authorization_details` through Token Exchange therefore loses an upper bound on that dimension when it composes with this document, and needs such an extension to restore it.  {{security-limits}} states the requirements an extension must meet.
 
@@ -276,7 +278,7 @@ The authorization server MUST perform the following checks.  Failure of any requ
 
 5. Confirm that the PRA `cnf` contains only `jkt` and that its value is syntactically valid.  Validate the DPoP proof carried on this request according to {{RFC9449}}, including its signature, `typ`, `alg`, `jwk`, `jti`, `htm`, `htu`, `iat`, and nonce when required.  Confirm that the DPoP public key's JWK SHA-256 Thumbprint exactly equals the PRA `cnf.jkt`.
 
-6. Validate the Token Exchange request, client and actor authentication, delegation relationship, and requested authorization under {{RFC8693}}, the applicable profile, and local policy.  Apply Presenter Limits per {{limits}} to both explicit request values and the proposed issued-token authorization.
+6. Validate the Token Exchange request, client and actor authentication, delegation relationship, and requested authorization under {{RFC8693}}, the applicable profile, and local policy.  Confirm that the request carries a parameter for every dimension the PRA limits, and apply Presenter Limits per {{limits}} to those request values and to the resulting authorization.
 
 On success, the Source Token's proof-of-possession requirement for this Token Exchange presentation is satisfied by the holder of the PRA Recipient Presenter key.  This result establishes control of an authorized presentation key.  It does not establish the presenter's application-level identity or independently authorize the exchange.
 
@@ -308,7 +310,7 @@ An applicable delegation profile MAY allow the authorization server to record th
 
 ## Errors {#te-errors}
 
-Errors are returned according to {{RFC8693, Section 2.2.2}} and {{RFC6749, Section 5.2}}.  When presenter rebinding is required, a missing or invalid `presenter_rebinding` parameter, PRA validation failure, DPoP failure, a DPoP proof for a key other than the PRA `cnf.jkt`, an inability to sender-constrain the requested token type per {{te-processing}}, or a request outside Presenter Limits uses `invalid_request`, except that an unacceptable `audience` or `resource` SHOULD use `invalid_target` as specified by {{RFC8693}}.  DPoP-specific error processing follows {{RFC9449}}.  Error descriptions SHOULD NOT disclose which key, relationship, or policy input caused rejection.
+Errors are returned according to {{RFC8693, Section 2.2.2}} and {{RFC6749, Section 5.2}}.  When presenter rebinding is required, a missing or invalid `presenter_rebinding` parameter, PRA validation failure, DPoP failure, a DPoP proof for a key other than the PRA `cnf.jkt`, an inability to sender-constrain the requested token type per {{te-processing}}, a request that omits a parameter for which the PRA carries a limit, or a request outside Presenter Limits uses `invalid_request`, except that an unacceptable `audience` or `resource` SHOULD use `invalid_target` as specified by {{RFC8693}}.  DPoP-specific error processing follows {{RFC9449}}.  Error descriptions SHOULD NOT disclose which key, relationship, or policy input caused rejection.
 
 ## Authorization Server Metadata {#metadata}
 
@@ -413,7 +415,11 @@ Original Presenters SHOULD use confirmation keys dedicated to key-bound tokens. 
 
 ## Presenter Limits Are Not Grants {#security-limits}
 
-Presenter Limits only narrow authorization.  An authorization server MUST apply all other authorization inputs independently and MUST NOT treat omission of a limit as permission.  It MUST check the authorization actually placed in the issued token so that default processing cannot exceed a present limit.
+Presenter Limits only narrow authorization.  An authorization server MUST apply all other authorization inputs independently and MUST NOT treat omission of a limit as permission.
+
+A present limit is an input to the computation that produces the granted authorization, alongside the request, the Source Token's authorization, and local policy.  It is not a check appended after issuance.  This is why {{limits}} rejects a request that omits a parameter for a limited dimension rather than defaulting it: a default computed without the limit as an input can exceed it, and a server that discovers this only by inspecting the finished token has already done the work twice.  The authorization placed in the issued token MUST NOT exceed a present limit, whatever other input would otherwise have produced a broader result.
+
+An authorization server that supports only some registered `presenter_limits` members fails closed rather than open.  {{pra-claims}} requires it to reject a PRA carrying a member it does not support, so a limit an authorization server cannot enforce is never silently ignored.
 
 This specification omits generic `authorization_details` containment because arbitrary authorization-detail types do not share a safe comparison operation.  Extensions adding such limits must define type-specific semantics and fail closed when containment cannot be determined.
 
@@ -552,7 +558,7 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 &client_assertion=<Delegate client assertion>
 ~~~
 
-The IdP validates the ID Token under the composed profile, reduces its `cnf` to `jkt(K_init)`, confirms that the PRA is signed by `K_init`, verifies the Source Token hash and IdP audience, checks the audience against `presenter_limits`, and verifies the Delegate's DPoP proof of `K_del`.  It separately authenticates the Delegate as client and actor, validates the administered cross-client relationship and `may_act` when present, and applies exchange-time policy.
+The IdP validates the ID Token under the composed profile, reduces its `cnf` to `jkt(K_init)`, confirms that the PRA is signed by `K_init`, verifies the Source Token hash and IdP audience, and verifies the Delegate's DPoP proof of `K_del`.  Because the PRA carries an `audience` limit, the request must carry an `audience` parameter, and the IdP checks the requested value against that limit rather than defaulting it.  It separately authenticates the Delegate as client and actor, validates the administered cross-client relationship and `may_act` when present, and applies exchange-time policy.
 
 The single `K_del` proof serves both roles required by {{te-request}}: it satisfies the PRA `cnf.jkt` and it sender-constrains the token the IdP issues.  Note that the Delegate authenticates as a client with a separate client assertion, so client authentication remains independent of key control.
 
@@ -622,6 +628,8 @@ This mechanism addresses the presenter-transition needs of OAuth delegation prof
 * Added an Extensibility section stating what an extension may add and the six invariants it MUST preserve, and noted that use outside Token Exchange is outside this document's scope rather than reserved against a future binding.
 
 * Requested a "Presenter Limits Members" registry so that independent extensions cannot collide on a member name, with a Specification Required procedure and expert instructions requiring fail-closed containment.
+
+* Required the Token Exchange request to carry a parameter for every dimension the PRA limits, replacing the rule that constrained authorization-server defaults.  With the request explicit and the issued authorization never exceeding the request, an authorization server can confine the issued token by comparing the request against the limit at one point, and Presenter Limits became an input to the authorization computation rather than a check on the finished token.
 
 -00
 
