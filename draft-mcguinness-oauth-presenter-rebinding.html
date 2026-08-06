@@ -1,0 +1,2279 @@
+<!DOCTYPE html>
+<html lang="en" class="Internet-Draft">
+<head>
+<meta charset="utf-8">
+<meta content="Common,Latin" name="scripts">
+<meta content="initial-scale=1.0" name="viewport">
+<title>Presenter Rebinding for OAuth 2.0 Proof-of-Possession Tokens</title>
+<meta content="Karl McGuinness" name="author">
+<meta content="
+       A proof-of-possession (PoP) token can normally be presented only by a party that holds the token's confirmation key.  This prevents an intended recipient from presenting the token when a token handoff is authorized but transferring the confirmation private key is unacceptable.  This document defines a one-hop presenter-rebinding mechanism for OAuth 2.0 Token Exchange.  The holder of a JWT Source Token's confirmation key signs a Presenter Rebinding Assertion (PRA) that authorizes a recipient key to present that exact token at a named authorization server.  The recipient presents the Source Token and PRA with a DPoP proof of its own key.  After applying normal authorization policy, the authorization server can issue a new token bound to the recipient key.  Further presenter changes use another exchange rather than an offline delegation chain. 
+    " name="description">
+<meta content="xml2rfc 3.34.0" name="generator">
+<meta content="oauth" name="keyword">
+<meta content="proof of possession" name="keyword">
+<meta content="dpop" name="keyword">
+<meta content="key binding" name="keyword">
+<meta content="presenter rebinding" name="keyword">
+<meta content="token exchange" name="keyword">
+<meta content="draft-mcguinness-oauth-presenter-rebinding-latest" name="ietf.draft">
+<!-- Generator version information:
+  xml2rfc 3.34.0
+    Python 3.14.5
+    ConfigArgParse 1.7.5
+    google-i18n-address 3.1.1
+    intervaltree 3.2.1
+    Jinja2 3.1.6
+    lxml 6.1.1
+    natsort 8.4.0
+    platformdirs 4.11.0
+    pycountry 24.6.1
+    PyYAML 6.0.3
+    requests 2.33.1
+    wcwidth 0.8.2
+-->
+<link href="draft-mcguinness-oauth-presenter-rebinding.xml" rel="alternate" type="application/rfc+xml">
+<link href="#copyright" rel="license">
+<style type="text/css">@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Italic'), local('Lora-Italic'), url('https://martinthomson.github.io/rfc-css/fonts/lora-italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Lora Regular'), local('Lora-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/lora-regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C88, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-vietnamese.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Lora Bold'), local('Lora-Bold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-bold-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('Lora SemiBold'), local('Lora-SemiBold'), url('https://martinthomson.github.io/rfc-css/fonts/lora-semibold-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Oxygen Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Oxygen Mono'), local('OxygenMono-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/oxygenmono-regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Oxygen Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Oxygen Mono'), local('OxygenMono-Regular'), url('https://martinthomson.github.io/rfc-css/fonts/oxygenmono-regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-greek.woff2') format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: italic;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-cyrillic-ext.woff2') format('woff2');
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-cyrillic.woff2') format('woff2');
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-greek.woff2') format('woff2');
+  unicode-range: U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Sofia Sans Semi Condensed';
+  font-style: normal;
+  font-weight: 1 1000;
+  src: url('https://martinthomson.github.io/rfc-css/fonts/sofiasanssemicondensed-regular-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  color-scheme: light dark;
+  --background-color: #fff;
+  --text-color: #222;
+  --title-color: #191919;
+  --link-color: #2a6496;
+  --highlight-color: #f9f9f9;
+  --line-color: #eee;
+  --pilcrow-weak: #ddd;
+  --pilcrow-strong: #bbb;
+  --small-font-size: 14.5px;
+  --font-mono: 'Oxygen Mono', monospace;
+  --font-title: "Sofia Sans Semi Condensed", sans-serif;
+  scrollbar-color: #bbb #eee;
+}
+body {
+  max-width: 600px;
+  margin: 75px auto;
+  padding: 0 5px;
+  color: var(--text-color);
+  background-color: var(--background-color);
+  font: 16px/22px "Lora", serif;
+  scroll-behavior: smooth;
+}
+
+.ears {
+  display: none;
+}
+
+/* headings */
+section {
+  clear: both;
+}
+.section-number {
+  padding-right: 0.5em;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-title);
+  font-weight: 680;
+  margin: 0.8em 0 0.3em;
+  font-size-adjust: 0.5;
+  color: var(--title-color);
+}
+h1 {
+  &#title {
+    font-size: 32px;
+    line-height: 40px;
+    clear: both;
+    margin: 1.5em 0 0.2em;
+  }
+  &#rfcnum {
+    margin: 1.5em 0 0.2em;
+    & + h1#title {
+      margin: 0.2em 0;
+    }
+  }
+}
+
+h1, h2, h3 {
+  font-size: 22px;
+  line-height: 27px;
+}
+h4, h5, h6 {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+/* general structure */
+.author {
+  padding-bottom: 0.3em;
+  vertical-align: top;
+}
+#abstract+p {
+  font-size: 18px;
+  line-height: 24px;
+  & code, & samp, & tt {
+    font-size: 16px;
+    line-height: 0;
+  }
+}
+
+p {
+  padding: 0;
+  margin: 0.5em 0;
+  text-align: left;
+}
+div {
+  margin: 0;
+}
+.alignRight {
+  margin: 1em 0;
+  &.art-text {
+    background-color: var(--highlight-color);
+    border: 1px solid var(--line-color);
+    border-radius: 3px;
+    padding: 0.5em 1em 0;
+    margin-bottom: 0.5em;
+    & pre {
+      padding: 0;
+      width: auto;
+    }
+  }
+  & > *:first-child {
+    border: none;
+    margin: 0;
+    float: right;
+    clear: both;
+  }
+  & > *:nth-child(2) {
+    clear: both;
+    display: block;
+    border: none;
+  }
+}
+svg {
+  display: block;
+  /* font-family isn't space-separated, but =~ will have to do */
+  &[font-family~="monospace" i], & [font-family~="monospace" i] {
+    font-family: var(--font-mono);
+  }
+}
+.alignCenter {
+  margin: 1em 0;
+  &.art-text {
+    background-color: var(--highlight-color);
+    border: 1px solid var(--line-color);
+    border-radius: 3px;
+    padding: 0.5em 1em 0;
+    margin-bottom: 0.5em;
+    & pre {
+      padding: 0;
+      width: auto;
+    }
+  }
+  & > *:first-child {
+    border: none;
+    /* this isn't optimal, but it's an existence proof.  PrinceXML doesn't
+       support flexbox yet.
+    */
+    display: table;
+    margin: 0 auto;
+  }
+}
+
+/* lists */
+ol, ul {
+  padding: 0;
+  margin: 0 0 0.5em 2em;
+  & :is(ol, ul) {
+    margin-left: 1em;
+  }
+}
+li {
+  margin: 0 0 0.25em 0;
+}
+ul.empty, .ulEmpty {
+  list-style-type: none;
+  & li {
+    margin-top: 0.5em;
+  }
+}
+:is(ul, ol).compact, .ulCompact, .olCompact {
+  margin: 0 0 0 2em;
+  & li {
+    margin: 0;
+    & :first-child { margin-top: 0; }
+    & :last-child { margin-bottom: 0; }
+  }
+}
+
+/* definition lists */
+dl {
+  clear: left;
+  --indent: 3ch;
+  /* --indent: attr(indent ch); not supported in any browser, but we can dream */
+  &.olPercent {
+    --indent: 5ch;
+    & > dt {
+      min-width: calc(var(--indent) - 2ch);
+      float: none;
+    }
+  }
+
+  dl > dd > & {
+    margin-top: 0.5em;
+    margin-bottom: 0;
+  }
+
+  &:not(.dlNewline) > dt {
+    float: left;
+    margin-right: 2ch;
+    min-width: 8ch;
+  }
+  & > dd {
+    margin-bottom: .8em;
+    margin-left: var(--indent) !important; /* stupid element overrides */
+    min-height: 2ex;
+  }
+}
+:is(dl.compact, .dlCompact) > dd {
+  margin-bottom: 0;
+  & > :is(:first-child, .break:first-child + *) {
+    margin-top: 0;
+  }
+  & > :is(:last-child) {
+    margin-bottom: 0;
+  }
+}
+:is(dd, span).break {
+  display: none;
+}
+
+/* links */
+a {
+  text-decoration: none;
+  &[href] {
+    color: var(--link-color);
+    &:hover { text-decoration: underline; }
+    &.selfRef {
+      color: var(--text-color);
+      &:hover {
+        text-decoration: none;
+        background-color: var(--highlight-color);
+      }
+    }
+  }
+}
+.iref + a[href].internal {
+  color: var(--text-color);
+}
+a.xref:is(.cite, .auto), :is(#status-of-memo, #copyright) a {
+  white-space: nowrap;
+}
+
+/* Figures */
+tt, code, pre {
+  background-color: var(--highlight-color);
+  font: 14px/22px var(--font-mono);
+}
+tt, code {
+  /* changing the font for inline elements leads to different ascender
+     and descender heights; as we want to retain baseline alignment,
+     remove leading to avoid altering the final height of lines
+     note: this fails if these blocks take an entire line,
+     a different solution would be great */
+  line-height: 0;
+}
+:is(h1, h2, h3, h4, h5, h6) :is(tt, code) {
+  font-size: 84%;
+}
+pre {
+  border: 1px solid var(--line-color);
+  font-size: 13.5px;
+  line-height: 16px;
+  letter-spacing: -0.2px;
+  margin: 5px;
+  padding: 5px;
+}
+img {
+  max-width: 100%;
+}
+figure {
+  margin: 0.5em 0;
+  padding: 0;
+  & blockquote {
+    margin: 0.8em 0.4em 0.4em;
+  }
+}
+figcaption, caption {
+  font-style: italic;
+  margin: 0.5em 1.5em;
+  text-align: left;
+  caption-side: bottom;
+}
+@media screen {
+  /* Auto-collapse boilerplate. */
+  :is(#status-of-memo, #copyright) {
+    & p {
+      margin: -2px 0;
+      max-height: 0;
+      transition: max-height 2s ease, margin 0.5s ease 0.5s;
+      overflow: hidden;
+    }
+    &:hover p,
+    & h2:target ~ p {
+      margin: 0.5em 0;
+      max-height: 500px;
+      overflow: auto;
+    }
+  }
+  pre, svg {
+    display: inline-block;
+    /* In the horizontal direction, sometimes people make over-sized figures.
+       Scrollbars for those is therefore necessary: auto adds them as necessary..
+       In the vertical direction, the line-height can combine with the font
+       asender/descender height to produce scrollbars: hidden avoids that. */
+    overflow: auto hidden;
+  }
+  pre {
+    max-width: 100%;
+    width: calc(100% - 22px - 1em);
+  }
+  svg {
+    max-width: calc(100% - 22px - 1em);
+  }
+  figure pre {
+    display: block;
+    width: calc(100% - 25px);
+  }
+  :is(pre, svg) + .pilcrow {
+    display: inline-block;
+    vertical-align: text-bottom;
+    padding-bottom: 8px;
+  }
+}
+
+/* aside, blockquote */
+aside, blockquote {
+  margin-left: 0;
+  padding: 0 2em;
+  font-style: italic;
+}
+blockquote {
+  margin: 1em 0;
+  border-left: 2px var(--pilcrow-strong) solid;
+}
+cite {
+  display: block;
+  text-align: right;
+  font-style: italic;
+}
+
+/* tables */
+table {
+  width: auto;
+  max-width: 100%;
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  &.right { margin-left: auto; }
+  &.center { margin-left: auto; margin-right: auto; }
+  &.left { margin-right: auto; }
+  & .text-left { text-align: left; }
+  & .text-center { text-align: center; }
+  & .text-right { text-align: right; }
+  & caption {
+    margin: 0;
+    padding: 3px 0 3px 1em;
+  }
+  & p { margin: 0; }
+}
+
+thead, tbody {
+  border: 1px solid var(--line-color);
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 10px;
+}
+th {
+  background-color: var(--line-color);
+}
+:is(tr:nth-child(2n), thead+tbody > tr:nth-child(2n+1)) > td {
+  background-color: var(--background-color);
+}
+:is(tr:nth-child(2n+1), thead+tbody > tr:nth-child(2n)) > td {
+  background-color: var(--highlight-color);
+}
+
+/* pilcrow */
+a.pilcrow {
+  margin-left: 3px;
+  opacity: 0.2;
+  user-select: none;
+  &[href] {
+    color: var(--pilcrow-weak);
+    &:hover { text-decoration: none; }
+  }
+  @media not print {
+    :hover > &, &:focus {
+      opacity: 1;
+    }
+    &[href]:hover {
+      color: var(--pilcrow-strong);
+      background-color: transparent;
+    }
+  }
+  @media print {
+    display: none;
+  }
+}
+
+/* misc */
+hr {
+  border: 0;
+  border-top: 1px solid var(--line-color);
+}
+.bcp14 {
+  font-variant: small-caps;
+  font-weight: 600;
+  font-size: var(--small-font-size);
+}
+.role {
+  font-variant: all-small-caps;
+}
+sub, sup {
+  line-height: 1;
+  font-size: 80%;
+}
+
+/* info block */
+#identifiers {
+  margin: 0;
+  font-size: var(--small-font-size);
+  line-height: 18px;
+  --identifier-width: 15ch;
+  & dt {
+    width: var(--identifier-width);
+    min-width: var(--identifier-width);
+    clear: left;
+    float: left;
+    text-align: right;
+    margin-right: 1ch;
+  }
+  & dd {
+    margin: 0;
+    margin-left: calc(1em + var(--identifier-width)) !important;
+    min-width: 5em;
+  }
+  & .authors {
+    & .author {
+      display: inline-block;
+      margin-right: 1.5em;
+    }
+    & .org {
+      font-style: italic;
+    }
+  }
+}
+
+/* The prepared/rendered info at the very bottom of the page */
+.docInfo {
+  color: #999;
+  font-size: 0.9em;
+  font-style: italic;
+  margin-top: 2em;
+  & .prepared {
+    float: right;
+  }
+}
+
+/* table of contents */
+#toc {
+  padding: 0.75em 0 2em 0;
+  margin-bottom: 1em;
+
+  & nav {
+    & ul {
+      margin: 0 0.5em 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    & li {
+      line-height: 1.3em;
+      margin: 2px 0;
+      padding-left: 1.2em;
+      text-indent: -1.2em;
+    }
+  }
+  & a.xref {
+    white-space: normal;
+  }
+}
+
+.references {
+  & > dt {
+    text-align: right;
+    font-weight: bold;
+    min-width: 10ch;
+    margin-right: 1.5ch;
+    &:target::before {
+      content: "⇒";
+      margin: 0 10px 0 -25px;
+    }
+  }
+  & > dd {
+    margin-left: 12ch !important;
+    overflow: visible;
+    & .refInstance {
+      margin-bottom: 0.8em;
+    }
+    & .ascii {
+      margin-bottom: 0.25em;
+    }
+  }
+}
+
+#rfc\.index\.index + ul {
+  margin-left: 0;
+}
+
+/* authors */
+address.vcard {
+  font-style: normal;
+  max-width: 20em;
+  margin: 1em auto 1em 0;
+
+  & .nameRole {
+    font-weight: 700;
+    margin-left: 0;
+  }
+  & .label {
+    margin: 0.5em 0;
+  }
+  & .type {
+    display: none;
+  }
+  & .alternative-contact {
+    margin: 0.5em 0 0.25em 0;
+  }
+  & .non-ascii {
+    margin: 0 0 0 2em;
+  }
+  & div.left {
+    text-align: left;
+  }
+  & div.right {
+    text-align: right;
+  }
+}
+
+hr.addr {
+  border-top: 1px dashed;
+  margin: 0;
+  color: #ddd;
+  max-width: calc(100% - 16px);
+}
+@media (min-width: 500px) {
+  #authors-addresses {
+    & > section {
+      column-count: 2;
+      column-gap: 20px;
+    }
+    & > section > h2 {
+      column-span: all;
+    }
+    /* hack for break-inside: avoid-column */
+    & address {
+      display: inline-block;
+      break-inside: avoid-column;
+    }
+  }
+}
+
+/* Comments */
+.rfcEditorRemove {
+  & p:first-of-type {
+    font-style: italic;
+  }
+}
+.cref {
+  background-color: rgba(249, 232, 105, 0.3);
+  padding: 2px 4px;
+}
+.crefSource {
+  font-style: italic;
+}
+
+@media screen {
+  #toc {
+    & nav {
+      font-family: var(--font-title);
+      font-weight: 360;
+      & > ul { margin-bottom: 2em; }
+      & ul {
+        margin: 0 0 0 4px;
+        & :is(p, li) {
+          margin: 2px 0;
+        }
+      }
+    }
+    & a.toplink {
+      float: right;
+    }
+  }
+}
+@media not screen {
+  #toc a.toplink {
+    display: none;
+  }
+}
+
+
+/* TOC layout for smaller screens */
+@media screen and (max-width: 929px) {
+  #toc {
+    position: fixed;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    padding: 1px 0 0 0;
+    margin: 0;
+    border-bottom: 1px solid #ccc;
+    opacity: 0.6;
+    & h2 {
+      margin: 0;
+      padding: 2px 0 2px 6px;
+      padding-right: 1em;
+      font-size: 18px;
+      line-height: 24px;
+      min-width: 190px;
+      text-align: right;
+      background-color: #444;
+      color: white;
+      cursor: pointer;
+      &::before { /* css hamburger */
+        float: right;
+        position: relative;
+        width: 1em;
+        height: 1px;
+        left: -164px;
+        margin: 8px 0 0 0;
+        background: white none repeat scroll 0 0;
+        box-shadow: 0 4px 0 0 white, 0 8px 0 0 white;
+        content: "";
+      }
+    }
+    & nav {
+      display: none;
+      background-color: var(--background-color);
+      padding: 0.5em 1em 1em;
+      overflow: auto;
+      overscroll-behavior: contain;
+      height: calc(100vh - 48px);
+      border-left: 1px solid #ddd;
+    }
+    &.active {
+      opacity: 1;
+      & nav { display: block; }
+    }
+    /* Make the collapsed ToC header render white on gray also when it's a link */
+    & h2 a,
+    & h2 a:is(:link, :focus, :hover),
+    & a.toplink,
+    & a.toplink:hover {
+      color: white;
+      background-color: #444;
+      text-decoration: none;
+    }
+    & a.toplink {
+      margin: 2px 0.5em 0;
+    }
+  }
+}
+
+/* TOC layout for wide screens */
+@media screen and (min-width: 930px) {
+  body {
+    padding-right: 360px;
+    padding-right: calc(min(180px + 20%, 500px));
+  }
+  #toc {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    right: calc(50vw - 480px);
+    width: 312px;
+    margin: 0;
+    padding: 0;
+    z-index: 1;
+    & h2 {
+      margin: 0;
+      padding: 0.25em 1em 1em 0;
+    }
+    & nav {
+      display: block;
+      height: calc(90vh - 84px);
+      bottom: 0;
+      padding: 0.5em 0 2em;
+      overflow: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+    }
+    & a.toplink {
+      margin: 8px 0.5em 0;
+    }
+  }
+  img { /* future proofing */
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+/* pagination */
+@media print {
+  body {
+    width: 100%;
+  }
+  p {
+    orphans: 3;
+    widows: 3;
+  }
+  #n-copyright-notice {
+    border-bottom: none;
+  }
+  #toc {
+    page-break-before: always;
+    border-top: none;
+    padding-top: 0;
+  }
+  #n-introduction {
+    page-break-before: always;
+  }
+  figure, pre, .vcard {
+    page-break-inside: avoid;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+  }
+  :is(h2, h3, h4, h5, h6)+*, dd {
+    page-break-before: avoid;
+  }
+  pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: 10pt;
+  }
+  table {
+    border: 1px solid #ddd;
+  }
+  td {
+    border-top: 1px solid #ddd;
+  }
+}
+
+@page :first {
+  padding-top: 0;
+  @top-left {
+    content: normal;
+    border: none;
+  }
+  @top-center {
+    content: normal;
+    border: none;
+  }
+  @top-right {
+    content: normal;
+    border: none;
+  }
+}
+
+@page {
+  size: A4;
+  margin-bottom: 45mm;
+  padding-top: 20px;
+}
+
+/* Dark mode. */
+@media (prefers-color-scheme: dark) {
+:root {
+  --background-color: #121212;
+  --text-color: #f0f0f0;
+  --title-color: #fff;
+  --link-color: #4da4f0;
+  --highlight-color: #282828;
+  --line-color: #444;
+  --pilcrow-weak: #444;
+  --pilcrow-strong: #666;
+  scrollbar-color: #777 #333;
+}
+}
+
+/* SVG Trick: a prefix match works because only black and white are allowed */
+svg {
+  & :is([stroke="black"], [stroke^="#000"]) {
+    stroke: var(--text-color);
+  }
+  & :is([stroke="white"], [stroke^="#fff"]) {
+    stroke: var(--background-color);
+  }
+  & :is([fill="black"], [fill^="#000"], :not([fill])) {
+    fill: var(--text-color);
+  }
+  & :is([fill="white"], [fill^="#fff"]) {
+    fill: var(--background-color);
+  }
+}
+</style>
+
+</head>
+<body class="xml2rfc">
+<table class="ears">
+<thead><tr>
+<td class="left">Internet-Draft</td>
+<td class="center">OAuth Presenter Rebinding</td>
+<td class="right">August 2026</td>
+</tr></thead>
+<tfoot><tr>
+<td class="left">McGuinness</td>
+<td class="center">Expires 7 February 2027</td>
+<td class="right">[Page]</td>
+</tr></tfoot>
+</table>
+<div id="external-metadata" class="document-information"></div>
+<div id="internal-metadata" class="document-information">
+<dl id="identifiers">
+<dt class="label-workgroup">Workgroup:</dt>
+<dd class="workgroup">Web Authorization Protocol</dd>
+<dt class="label-internet-draft">Internet-Draft:</dt>
+<dd class="internet-draft">draft-mcguinness-oauth-presenter-rebinding-latest</dd>
+<dt class="label-published">Published:</dt>
+<dd class="published">
+<time datetime="2026-08-06" class="published">6 August 2026</time>
+    </dd>
+<dt class="label-intended-status">Intended Status:</dt>
+<dd class="intended-status">Standards Track</dd>
+<dt class="label-expires">Expires:</dt>
+<dd class="expires"><time datetime="2027-02-07">7 February 2027</time></dd>
+<dt class="label-authors">Author:</dt>
+<dd class="authors">
+<div class="author">
+      <div class="author-name">K. McGuinness</div>
+<div class="org">Independent</div>
+</div>
+</dd>
+</dl>
+</div>
+<h1 id="title">Presenter Rebinding for OAuth 2.0 Proof-of-Possession Tokens</h1>
+<section id="section-abstract">
+      <h2 id="abstract"><a href="#abstract" class="selfRef">Abstract</a></h2>
+<p id="section-abstract-1">A proof-of-possession (PoP) token can normally be presented only by a party that holds the token's confirmation key.  This prevents an intended recipient from presenting the token when a token handoff is authorized but transferring the confirmation private key is unacceptable.  This document defines a one-hop presenter-rebinding mechanism for OAuth 2.0 Token Exchange.  The holder of a JWT Source Token's confirmation key signs a Presenter Rebinding Assertion (PRA) that authorizes a recipient key to present that exact token at a named authorization server.  The recipient presents the Source Token and PRA with a DPoP proof of its own key.  After applying normal authorization policy, the authorization server can issue a new token bound to the recipient key.  Further presenter changes use another exchange rather than an offline delegation chain.<a href="#section-abstract-1" class="pilcrow">¶</a></p>
+</section>
+<section class="note rfcEditorRemove" id="section-note.1">
+      <h2 id="name-about-this-document">
+<a href="#name-about-this-document" class="section-name selfRef">About This Document</a>
+      </h2>
+<p id="section-note.1-1">This note is to be removed before publishing as an RFC.<a href="#section-note.1-1" class="pilcrow">¶</a></p>
+<p id="section-note.1-2">
+        The latest revision of this draft can be found at <span><a href="https://mcguinness.github.io/draft-mcguinness-oauth-presenter-rebinding/draft-mcguinness-oauth-presenter-rebinding.html">https://mcguinness.github.io/draft-mcguinness-oauth-presenter-rebinding/draft-mcguinness-oauth-presenter-rebinding.html</a></span>.
+        Status information for this document may be found at <span><a href="https://datatracker.ietf.org/doc/draft-mcguinness-oauth-presenter-rebinding/">https://datatracker.ietf.org/doc/draft-mcguinness-oauth-presenter-rebinding/</a></span>.<a href="#section-note.1-2" class="pilcrow">¶</a></p>
+<p id="section-note.1-3">
+        Discussion of this document takes place on the
+        Web Authorization Protocol Working Group mailing list (<span><a href="mailto:oauth@ietf.org">mailto:oauth@ietf.org</a></span>),
+        which is archived at <span><a href="https://mailarchive.ietf.org/arch/browse/oauth/">https://mailarchive.ietf.org/arch/browse/oauth/</a></span>.
+        Subscribe at <span><a href="https://www.ietf.org/mailman/listinfo/oauth/">https://www.ietf.org/mailman/listinfo/oauth/</a></span>.<a href="#section-note.1-3" class="pilcrow">¶</a></p>
+<p id="section-note.1-4">Source for this draft and an issue tracker can be found at
+        <span><a href="https://github.com/mcguinness/draft-mcguinness-oauth-presenter-rebinding">https://github.com/mcguinness/draft-mcguinness-oauth-presenter-rebinding</a></span>.<a href="#section-note.1-4" class="pilcrow">¶</a></p>
+</section>
+<div id="status-of-memo">
+<section id="section-boilerplate.1">
+        <h2 id="name-status-of-this-memo">
+<a href="#name-status-of-this-memo" class="section-name selfRef">Status of This Memo</a>
+        </h2>
+<p id="section-boilerplate.1-1">
+        This Internet-Draft is submitted in full conformance with the
+        provisions of BCP 78 and BCP 79.<a href="#section-boilerplate.1-1" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-2">
+        Internet-Drafts are working documents of the Internet Engineering Task
+        Force (IETF). Note that other groups may also distribute working
+        documents as Internet-Drafts. The list of current Internet-Drafts is
+        at <span><a href="https://datatracker.ietf.org/drafts/current/">https://datatracker.ietf.org/drafts/current/</a></span>.<a href="#section-boilerplate.1-2" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-3">
+        Internet-Drafts are draft documents valid for a maximum of six months
+        and may be updated, replaced, or obsoleted by other documents at any
+        time. It is inappropriate to use Internet-Drafts as reference
+        material or to cite them other than as "work in progress."<a href="#section-boilerplate.1-3" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.1-4">
+        This Internet-Draft will expire on 7 February 2027.<a href="#section-boilerplate.1-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="copyright">
+<section id="section-boilerplate.2">
+        <h2 id="name-copyright-notice">
+<a href="#name-copyright-notice" class="section-name selfRef">Copyright Notice</a>
+        </h2>
+<p id="section-boilerplate.2-1">
+            Copyright (c) 2026 IETF Trust and the persons identified as the
+            document authors. All rights reserved.<a href="#section-boilerplate.2-1" class="pilcrow">¶</a></p>
+<p id="section-boilerplate.2-2">
+            This document is subject to BCP 78 and the IETF Trust's Legal
+            Provisions Relating to IETF Documents
+            (<span><a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a></span>) in effect on the date of
+            publication of this document. Please review these documents
+            carefully, as they describe your rights and restrictions with
+            respect to this document. Code Components extracted from this
+            document must include Revised BSD License text as described in
+            Section 4.e of the Trust Legal Provisions and are provided without
+            warranty as described in the Revised BSD License.<a href="#section-boilerplate.2-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="toc">
+<section id="section-toc.1">
+        <a href="#" onclick="scroll(0,0)" class="toplink">▲</a><h2 id="name-table-of-contents">
+<a href="#name-table-of-contents" class="section-name selfRef">Table of Contents</a>
+        </h2>
+<nav class="toc"><ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1">
+            <p id="section-toc.1-1.1.1" class="keepWithNext"><a href="#section-1" class="auto internal xref">1</a>.  <a href="#name-introduction" class="internal xref">Introduction</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.1.2.1">
+                <p id="section-toc.1-1.1.2.1.1" class="keepWithNext"><a href="#section-1.1" class="auto internal xref">1.1</a>.  <a href="#name-requirements-and-scope" class="internal xref">Requirements and Scope</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.2">
+            <p id="section-toc.1-1.2.1" class="keepWithNext"><a href="#section-2" class="auto internal xref">2</a>.  <a href="#name-conventions-and-definitions" class="internal xref">Conventions and Definitions</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.3">
+            <p id="section-toc.1-1.3.1"><a href="#section-3" class="auto internal xref">3</a>.  <a href="#name-protocol-model" class="internal xref">Protocol Model</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4">
+            <p id="section-toc.1-1.4.1"><a href="#section-4" class="auto internal xref">4</a>.  <a href="#name-presenter-rebinding-asserti" class="internal xref">Presenter Rebinding Assertion</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.1">
+                <p id="section-toc.1-1.4.2.1.1"><a href="#section-4.1" class="auto internal xref">4.1</a>.  <a href="#name-jose-header" class="internal xref">JOSE Header</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.2">
+                <p id="section-toc.1-1.4.2.2.1"><a href="#section-4.2" class="auto internal xref">4.2</a>.  <a href="#name-claims" class="internal xref">Claims</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.3">
+                <p id="section-toc.1-1.4.2.3.1"><a href="#section-4.3" class="auto internal xref">4.3</a>.  <a href="#name-confirmation-key-identifica" class="internal xref">Confirmation-Key Identification</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.4.2.4">
+                <p id="section-toc.1-1.4.2.4.1"><a href="#section-4.4" class="auto internal xref">4.4</a>.  <a href="#name-example" class="internal xref">Example</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.5">
+            <p id="section-toc.1-1.5.1"><a href="#section-5" class="auto internal xref">5</a>.  <a href="#name-presenter-limits" class="internal xref">Presenter Limits</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.6">
+            <p id="section-toc.1-1.6.1"><a href="#section-6" class="auto internal xref">6</a>.  <a href="#name-presentation-and-validation" class="internal xref">Presentation and Validation</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7">
+            <p id="section-toc.1-1.7.1"><a href="#section-7" class="auto internal xref">7</a>.  <a href="#name-use-with-oauth-20-token-exc" class="internal xref">Use with OAuth 2.0 Token Exchange</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.1">
+                <p id="section-toc.1-1.7.2.1.1"><a href="#section-7.1" class="auto internal xref">7.1</a>.  <a href="#name-request" class="internal xref">Request</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.2">
+                <p id="section-toc.1-1.7.2.2.1"><a href="#section-7.2" class="auto internal xref">7.2</a>.  <a href="#name-processing-and-output" class="internal xref">Processing and Output</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.3">
+                <p id="section-toc.1-1.7.2.3.1"><a href="#section-7.3" class="auto internal xref">7.3</a>.  <a href="#name-errors" class="internal xref">Errors</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.7.2.4">
+                <p id="section-toc.1-1.7.2.4.1"><a href="#section-7.4" class="auto internal xref">7.4</a>.  <a href="#name-authorization-server-metada" class="internal xref">Authorization Server Metadata</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.8">
+            <p id="section-toc.1-1.8.1"><a href="#section-8" class="auto internal xref">8</a>.  <a href="#name-use-in-delegation-profiles" class="internal xref">Use in Delegation Profiles</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.9">
+            <p id="section-toc.1-1.9.1"><a href="#section-9" class="auto internal xref">9</a>.  <a href="#name-extensibility" class="internal xref">Extensibility</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10">
+            <p id="section-toc.1-1.10.1"><a href="#section-10" class="auto internal xref">10</a>. <a href="#name-security-considerations" class="internal xref">Security Considerations</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.1">
+                <p id="section-toc.1-1.10.2.1.1"><a href="#section-10.1" class="auto internal xref">10.1</a>.  <a href="#name-explicit-acceptance-of-rebi" class="internal xref">Explicit Acceptance of Rebinding</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.2">
+                <p id="section-toc.1-1.10.2.2.1"><a href="#section-10.2" class="auto internal xref">10.2</a>.  <a href="#name-separation-of-key-control-i" class="internal xref">Separation of Key Control, Identity, and Authority</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.3">
+                <p id="section-toc.1-1.10.2.3.1"><a href="#section-10.3" class="auto internal xref">10.3</a>.  <a href="#name-recipient-key-authenticatio" class="internal xref">Recipient Key Authentication</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.4">
+                <p id="section-toc.1-1.10.2.4.1"><a href="#section-10.4" class="auto internal xref">10.4</a>.  <a href="#name-replay-and-freshness" class="internal xref">Replay and Freshness</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.5">
+                <p id="section-toc.1-1.10.2.5.1"><a href="#section-10.5" class="auto internal xref">10.5</a>.  <a href="#name-request-binding" class="internal xref">Request Binding</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.6">
+                <p id="section-toc.1-1.10.2.6.1"><a href="#section-10.6" class="auto internal xref">10.6</a>.  <a href="#name-token-and-key-substitution" class="internal xref">Token and Key Substitution</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.7">
+                <p id="section-toc.1-1.10.2.7.1"><a href="#section-10.7" class="auto internal xref">10.7</a>.  <a href="#name-presenter-limits-are-not-gr" class="internal xref">Presenter Limits Are Not Grants</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.8">
+                <p id="section-toc.1-1.10.2.8.1"><a href="#section-10.8" class="auto internal xref">10.8</a>.  <a href="#name-subsequent-presenter-transi" class="internal xref">Subsequent Presenter Transitions</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.9">
+                <p id="section-toc.1-1.10.2.9.1"><a href="#section-10.9" class="auto internal xref">10.9</a>.  <a href="#name-downgrade-and-confusion" class="internal xref">Downgrade and Confusion</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.10.2.10">
+                <p id="section-toc.1-1.10.2.10.1"><a href="#section-10.10" class="auto internal xref">10.10</a>. <a href="#name-trust-domains" class="internal xref">Trust Domains</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.11">
+            <p id="section-toc.1-1.11.1"><a href="#section-11" class="auto internal xref">11</a>. <a href="#name-privacy-considerations" class="internal xref">Privacy Considerations</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12">
+            <p id="section-toc.1-1.12.1"><a href="#section-12" class="auto internal xref">12</a>. <a href="#name-iana-considerations" class="internal xref">IANA Considerations</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.1">
+                <p id="section-toc.1-1.12.2.1.1"><a href="#section-12.1" class="auto internal xref">12.1</a>.  <a href="#name-media-type-registration" class="internal xref">Media Type Registration</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.2">
+                <p id="section-toc.1-1.12.2.2.1"><a href="#section-12.2" class="auto internal xref">12.2</a>.  <a href="#name-json-web-token-claims-regis" class="internal xref">JSON Web Token Claims Registration</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.3">
+                <p id="section-toc.1-1.12.2.3.1"><a href="#section-12.3" class="auto internal xref">12.3</a>.  <a href="#name-presenter-limits-members-re" class="internal xref">Presenter Limits Members Registry</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.4">
+                <p id="section-toc.1-1.12.2.4.1"><a href="#section-12.4" class="auto internal xref">12.4</a>.  <a href="#name-oauth-parameters-registrati" class="internal xref">OAuth Parameters Registration</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.12.2.5">
+                <p id="section-toc.1-1.12.2.5.1"><a href="#section-12.5" class="auto internal xref">12.5</a>.  <a href="#name-oauth-authorization-server-" class="internal xref">OAuth Authorization Server Metadata Registration</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.13">
+            <p id="section-toc.1-1.13.1"><a href="#section-13" class="auto internal xref">13</a>. <a href="#name-references" class="internal xref">References</a></p>
+<ul class="compact toc ulBare ulEmpty">
+<li class="compact toc ulBare ulEmpty" id="section-toc.1-1.13.2.1">
+                <p id="section-toc.1-1.13.2.1.1"><a href="#section-13.1" class="auto internal xref">13.1</a>.  <a href="#name-normative-references" class="internal xref">Normative References</a></p>
+</li>
+              <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.13.2.2">
+                <p id="section-toc.1-1.13.2.2.1"><a href="#section-13.2" class="auto internal xref">13.2</a>.  <a href="#name-informative-references" class="internal xref">Informative References</a></p>
+</li>
+            </ul>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.14">
+            <p id="section-toc.1-1.14.1"><a href="#appendix-A" class="auto internal xref">Appendix A</a>.  <a href="#name-worked-example-cross-client" class="internal xref">Worked Example: Cross-Client Delegation</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.15">
+            <p id="section-toc.1-1.15.1"><a href="#appendix-B" class="auto internal xref"></a><a href="#name-acknowledgments" class="internal xref">Acknowledgments</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.16">
+            <p id="section-toc.1-1.16.1"><a href="#appendix-C" class="auto internal xref"></a><a href="#name-document-history" class="internal xref">Document History</a></p>
+</li>
+          <li class="compact toc ulBare ulEmpty" id="section-toc.1-1.17">
+            <p id="section-toc.1-1.17.1"><a href="#appendix-D" class="auto internal xref"></a><a href="#name-authors-address" class="internal xref">Author's Address</a></p>
+</li>
+        </ul>
+</nav>
+</section>
+</div>
+<div id="introduction">
+<section id="section-1">
+      <h2 id="name-introduction">
+<a href="#section-1" class="section-number selfRef">1. </a><a href="#name-introduction" class="section-name selfRef">Introduction</a>
+      </h2>
+<p id="section-1-1">Proof-of-possession (PoP) binding transforms a bearer security token into one that only its intended holder can use.  A JWT can carry a confirmation (<code>cnf</code>) claim <span>[<a href="#RFC7800" class="cite xref">RFC7800</a>]</span> identifying a key, and the presenter proves possession of that key when using the token.  OpenID Connect Key Binding <span>[<a href="#OpenID.KeyBinding" class="cite xref">OpenID.KeyBinding</a>]</span> applies this model to ID Tokens, and JWT access tokens <span>[<a href="#RFC9068" class="cite xref">RFC9068</a>]</span> and Token Exchange <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>]</span> outputs can carry <code>cnf</code> as well.<a href="#section-1-1" class="pilcrow">¶</a></p>
+<p id="section-1-2">PoP binding creates a gap whenever the party that should present a token is not the party the token is bound to.  This arises in more than one place:<a href="#section-1-2" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-1-3.1">
+          <p id="section-1-3.1.1">In cross-client delegation <span>[<a href="#I-D.mcguinness-oauth-cross-client-delegation" class="cite xref">I-D.mcguinness-oauth-cross-client-delegation</a>]</span>, a Delegate presents an Identity Assertion issued to and key-bound to an Initiator.  The Delegate does not hold the Initiator's key.<a href="#section-1-3.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-1-3.2">
+          <p id="section-1-3.2.1">In presenter-transition and rebind flows under the OAuth Actor Profile <span>[<a href="#I-D.mcguinness-oauth-actor-profile" class="cite xref">I-D.mcguinness-oauth-actor-profile</a>]</span>, a token bound to one presenter has to be continued by another.<a href="#section-1-3.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-1-3.3">
+          <p id="section-1-3.3.1">More generally, any Token Exchange in which the requesting party differs from the party a key-bound <code>subject_token</code> is bound to faces the same gap, whatever profile governs the exchange.<a href="#section-1-3.3.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+<p id="section-1-4">Two unsatisfactory options are common today.  Removing the binding turns the token into a replayable bearer credential and discards the protection PoP binding provides.  Sharing the confirmation private key defeats key isolation and is often impossible.  This document defines a third option that requires neither.<a href="#section-1-4" class="pilcrow">¶</a></p>
+<p id="section-1-5">This document defines a one-hop cryptographic authorization for changing the presenter.  The holder of the Source Token's confirmation key signs a <strong>Presenter Rebinding Assertion (PRA)</strong> that binds together the exact Source Token, a recipient key, and one authorization server.  The recipient submits the Source Token and PRA in a Token Exchange request and proves possession of the recipient key with DPoP <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span>.  The authorization server validates both signatures and applies all ordinary Token Exchange, client, actor, and deployment policy before issuing a token bound to the recipient key.<a href="#section-1-5" class="pilcrow">¶</a></p>
+<p id="section-1-6">The PRA answers one question: did the Source Token's confirmation-key holder authorize this recipient key to present this token at this authorization server?  It does not identify the party controlling either key, grant scopes or resources, or establish that an actor is authorized to act for a subject.  Those decisions remain with the applicable OAuth profile and authorization-server policy.<a href="#section-1-6" class="pilcrow">¶</a></p>
+<p id="section-1-7">Presenter rebinding is deliberately one hop.  If the recipient later needs to authorize another presenter, it first obtains a new token bound to its own key and creates a new PRA for that token.  This keeps each proof path constant in size and ensures that the authorization server evaluates policy at every presenter transition.  Offline, recursively signed delegation chains are out of scope.<a href="#section-1-7" class="pilcrow">¶</a></p>
+<div id="scope">
+<section id="section-1.1">
+        <h3 id="name-requirements-and-scope">
+<a href="#section-1.1" class="section-number selfRef">1.1. </a><a href="#name-requirements-and-scope" class="section-name selfRef">Requirements and Scope</a>
+        </h3>
+<p id="section-1.1-1">This specification applies to a Source Token that:<a href="#section-1.1-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-1.1-2.1">
+            <p id="section-1.1-2.1.1">is a JWT whose exact encoded value is available to both the confirmation-key holder and the authorization server;<a href="#section-1.1-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-2.2">
+            <p id="section-1.1-2.2.1">is accepted as a <code>subject_token</code> in OAuth 2.0 Token Exchange; and<a href="#section-1.1-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-2.3">
+            <p id="section-1.1-2.3.1">carries an RFC 7800 <code>cnf</code> claim that resolves to exactly one asymmetric signing key as specified in <a href="#key-identification" class="auto internal xref">Section 4.3</a>.<a href="#section-1.1-2.3.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-1.1-3">The recipient proves possession with DPoP, and the recipient key is the key proven by the request's single DPoP proof, as specified in <a href="#te-request" class="auto internal xref">Section 7.1</a>.  Symmetric confirmation keys, bearer Source Tokens, non-JWT Source Tokens, mutual-TLS presenter rebinding, use outside Token Exchange, and offline multi-hop delegation are out of scope.  A future specification can define another profile without changing the one-hop security invariant defined here.<a href="#section-1.1-3" class="pilcrow">¶</a></p>
+<p id="section-1.1-4">This document changes nothing for direct presentation.  A party that holds the Source Token's confirmation key presents the token under its existing profile and does not use a PRA.<a href="#section-1.1-4" class="pilcrow">¶</a></p>
+<p id="section-1.1-5">Presenter rebinding is opt-in.  An authorization server <span class="bcp14">MUST</span> accept a PRA only under an applicable profile and local policy that explicitly permit presenter rebinding for the Source Token type and request context.<a href="#section-1.1-5" class="pilcrow">¶</a></p>
+<p id="section-1.1-6">The following are also out of scope:<a href="#section-1.1-6" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-1.1-7.1">
+            <p id="section-1.1-7.1.1">how the confirmation-key holder decides to authorize the handoff, including user interaction or consent;<a href="#section-1.1-7.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-7.2">
+            <p id="section-1.1-7.2.1">how the confirmation-key holder authenticates the intended recipient key, except for the requirements in <a href="#recipient-key" class="auto internal xref">Section 10.3</a>;<a href="#section-1.1-7.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-7.3">
+            <p id="section-1.1-7.3.1">establishing trust in the Source Token issuer; and<a href="#section-1.1-7.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-1.1-7.4">
+            <p id="section-1.1-7.4.1">the policy for authenticating or authorizing the clients, actors, subject, requested resources, or requested scopes.<a href="#section-1.1-7.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+</section>
+</div>
+<div id="conventions">
+<section id="section-2">
+      <h2 id="name-conventions-and-definitions">
+<a href="#section-2" class="section-number selfRef">2. </a><a href="#name-conventions-and-definitions" class="section-name selfRef">Conventions and Definitions</a>
+      </h2>
+<p id="section-2-1">The key words "<span class="bcp14">MUST</span>", "<span class="bcp14">MUST NOT</span>", "<span class="bcp14">REQUIRED</span>", "<span class="bcp14">SHALL</span>", "<span class="bcp14">SHALL NOT</span>", "<span class="bcp14">SHOULD</span>", "<span class="bcp14">SHOULD NOT</span>", "<span class="bcp14">RECOMMENDED</span>", "<span class="bcp14">NOT RECOMMENDED</span>",
+"<span class="bcp14">MAY</span>", and "<span class="bcp14">OPTIONAL</span>" in this document are to be interpreted as
+described in BCP 14 <span>[<a href="#RFC2119" class="cite xref">RFC2119</a>]</span> <span>[<a href="#RFC8174" class="cite xref">RFC8174</a>]</span> when, and only when, they
+appear in all capitals, as shown here.<a href="#section-2-1" class="pilcrow">¶</a></p>
+<p id="section-2-2">Unless otherwise specified, OAuth and JOSE terms are used as defined by <span>[<a href="#RFC6749" class="cite xref">RFC6749</a>]</span>, <span>[<a href="#RFC7515" class="cite xref">RFC7515</a>]</span>, <span>[<a href="#RFC7517" class="cite xref">RFC7517</a>]</span>, <span>[<a href="#RFC7519" class="cite xref">RFC7519</a>]</span>, <span>[<a href="#RFC7800" class="cite xref">RFC7800</a>]</span>, <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>]</span>, and <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span>.<a href="#section-2-2" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-2-3">
+        <dt id="section-2-3.1">Source Token:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-3.2">
+          <p id="section-2-3.2.1">A JWT used as the Token Exchange <code>subject_token</code>, carrying an RFC 7800 <code>cnf</code> claim, whose presenter is being rebound.<a href="#section-2-3.2.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-3.3">Source Confirmation Key:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-3.4">
+          <p id="section-2-3.4.1">The asymmetric signing key identified by the Source Token's <code>cnf</code> claim.<a href="#section-2-3.4.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-3.5">Original Presenter:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-3.6">
+          <p id="section-2-3.6.1">The party that holds the Source Confirmation Key and signs a PRA.  The term describes key control and does not, by itself, identify an OAuth client or actor.<a href="#section-2-3.6.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-3.7">Recipient Presenter:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-3.8">
+          <p id="section-2-3.8.1">The party that controls the recipient key identified by a PRA, submits the Token Exchange request, and proves possession of that key with DPoP.<a href="#section-2-3.8.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-3.9">Presenter Rebinding Assertion (PRA):</dt>
+        <dd style="margin-left: 1.5em" id="section-2-3.10">
+          <p id="section-2-3.10.1">A signed JWT by which the Original Presenter authorizes a Recipient Presenter key to present one exact Source Token at one authorization server.<a href="#section-2-3.10.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+<dt id="section-2-3.11">Presenter Limits:</dt>
+        <dd style="margin-left: 1.5em" id="section-2-3.12">
+          <p id="section-2-3.12.1">Optional upper bounds in a PRA on the Token Exchange target audiences, resources, and scopes that can result from the request.  Presenter Limits restrict a request but never grant authority.<a href="#section-2-3.12.1" class="pilcrow">¶</a></p>
+</dd>
+      <dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="model">
+<section id="section-3">
+      <h2 id="name-protocol-model">
+<a href="#section-3" class="section-number selfRef">3. </a><a href="#name-protocol-model" class="section-name selfRef">Protocol Model</a>
+      </h2>
+<p id="section-3-1">Presenter rebinding has three cryptographically distinct inputs:<a href="#section-3-1" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-3-2">
+<li id="section-3-2.1">
+          <p id="section-3-2.1.1">The Source Token establishes the Source Confirmation Key.<a href="#section-3-2.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-3-2.2">
+          <p id="section-3-2.2.1">The PRA, signed by that key, authorizes the recipient key for the exact Source Token and authorization server.<a href="#section-3-2.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-3-2.3">
+          <p id="section-3-2.3.1">The DPoP proof demonstrates that the Token Exchange requester controls the recipient key and binds that proof to the token-endpoint request.<a href="#section-3-2.3.1" class="pilcrow">¶</a></p>
+</li>
+      </ol>
+<p id="section-3-3">All three inputs are required.  A PRA without the recipient's DPoP proof can be copied but not used.  A recipient DPoP proof without a PRA does not satisfy the Source Token's confirmation requirement.  Neither artifact replaces validation of the Source Token or authorization of the Token Exchange request.<a href="#section-3-3" class="pilcrow">¶</a></p>
+<p id="section-3-4">The Recipient Presenter key is the key proven by the request's DPoP proof.  <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span> permits at most one DPoP proof per request, and at the token endpoint that proof is also what sender-constrains the issued token.  A single key therefore serves both roles, and the issued token is bound to the Recipient Presenter key as specified in <a href="#te-processing" class="auto internal xref">Section 7.2</a>.  A later presenter transition starts from that newly issued token and requires a new one-hop PRA.  The authorization server, rather than a recursively nested assertion, carries forward any authorized actor history in the issued token according to the applicable actor profile.<a href="#section-3-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="pra">
+<section id="section-4">
+      <h2 id="name-presenter-rebinding-asserti">
+<a href="#section-4" class="section-number selfRef">4. </a><a href="#name-presenter-rebinding-asserti" class="section-name selfRef">Presenter Rebinding Assertion</a>
+      </h2>
+<p id="section-4-1">A Presenter Rebinding Assertion is a JWT <span>[<a href="#RFC7519" class="cite xref">RFC7519</a>]</span> secured as a JWS <span>[<a href="#RFC7515" class="cite xref">RFC7515</a>]</span>.<a href="#section-4-1" class="pilcrow">¶</a></p>
+<div id="pra-header">
+<section id="section-4.1">
+        <h3 id="name-jose-header">
+<a href="#section-4.1" class="section-number selfRef">4.1. </a><a href="#name-jose-header" class="section-name selfRef">JOSE Header</a>
+        </h3>
+<p id="section-4.1-1">The protected JOSE header <span class="bcp14">MUST</span> contain:<a href="#section-4.1-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-4.1-2.1">
+            <p id="section-4.1-2.1.1"><code>typ</code>: the explicit type <code>pra+jwt</code> (<a href="#iana-media-type" class="auto internal xref">Section 12.1</a>).  As permitted by <span>[<a href="#RFC7515" class="cite xref">RFC7515</a>], <a href="https://rfc-editor.org/rfc/rfc7515#section-4.1.9" class="relref">Section 4.1.9</a></span>, the <code>application/</code> prefix is omitted.  An authorization server <span class="bcp14">MUST</span> reject a JWT presented as a PRA whose <code>typ</code> is not <code>pra+jwt</code>.<a href="#section-4.1-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.1-2.2">
+            <p id="section-4.1-2.2.1"><code>alg</code>: an asymmetric digital-signature algorithm accepted by the authorization server and appropriate for the key in <code>jwk</code>.  An authorization server <span class="bcp14">MUST</span> reject <code>none</code>, symmetric algorithms, algorithms outside its allowlist, and an algorithm inconsistent with the key type.  An authorization server advertises the algorithms it accepts as specified in <a href="#metadata" class="auto internal xref">Section 7.4</a>.<a href="#section-4.1-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.1-2.3">
+            <p id="section-4.1-2.3.1"><code>jwk</code>: the public Source Confirmation Key, represented as an asymmetric JWK <span>[<a href="#RFC7517" class="cite xref">RFC7517</a>]</span> containing only public parameters.  An authorization server <span class="bcp14">MUST</span> reject a <code>jwk</code> containing private-key material.<a href="#section-4.1-2.3.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-4.1-3">The <code>jwk</code> is not trusted merely because it appears in the header.  Its JWK SHA-256 Thumbprint <span class="bcp14">MUST</span> match the key identifier derived from the validated Source Token as specified in <a href="#validation" class="auto internal xref">Section 6</a>.<a href="#section-4.1-3" class="pilcrow">¶</a></p>
+<p id="section-4.1-4">An authorization server <span class="bcp14">MUST</span> resolve the PRA signing key only from the <code>jwk</code> header parameter.  It <span class="bcp14">MUST NOT</span> dereference a <code>jku</code> or <code>x5u</code> header parameter and <span class="bcp14">MUST NOT</span> resolve the signing key from <code>x5c</code> or <code>kid</code>.  Dereferencing a presenter-supplied URI exposes the authorization server to request forgery and serves no purpose here, because the signing key is fully determined by the validated Source Token's <code>cnf</code> claim.<a href="#section-4.1-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="pra-claims">
+<section id="section-4.2">
+        <h3 id="name-claims">
+<a href="#section-4.2" class="section-number selfRef">4.2. </a><a href="#name-claims" class="section-name selfRef">Claims</a>
+        </h3>
+<p id="section-4.2-1">A PRA <span class="bcp14">MUST</span> contain:<a href="#section-4.2-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-4.2-2.1">
+            <p id="section-4.2-2.1.1"><code>sth</code> (Source Token hash): the base64url encoding without padding of the SHA-256 digest of the ASCII octets of the exact encoded Source Token value.  This is the construction used by the DPoP <code>ath</code> claim (<span>[<a href="#RFC9449" class="cite xref">RFC9449</a>], <a href="https://rfc-editor.org/rfc/rfc9449#section-4.2" class="relref">Section 4.2</a></span>), applied to the Source Token.  The value is computed before transport encoding.  For Token Exchange, it is computed over the <code>subject_token</code> value before <code>application/x-www-form-urlencoded</code> encoding, and the authorization server computes it after form decoding.  It <span class="bcp14">MUST NOT</span> be computed over decoded claims, reserialized JSON, or a canonicalized representation.<a href="#section-4.2-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.2-2.2">
+            <p id="section-4.2-2.2.1"><code>cnf</code>: the Recipient Presenter key.  It <span class="bcp14">MUST</span> be a JSON object containing a single member, <code>jkt</code>, whose value is the JWK SHA-256 Thumbprint <span>[<a href="#RFC7638" class="cite xref">RFC7638</a>]</span> of the recipient's asymmetric DPoP public key.  An authorization server <span class="bcp14">MUST</span> reject a PRA whose <code>cnf</code> contains any other member.  This specification defines only <code>jkt</code>, because DPoP is the only proof mechanism it defines; an extension introducing another confirmation method <span class="bcp14">MUST</span> specify the corresponding proof mechanism and <span class="bcp14">MUST</span> preserve the requirement that <code>cnf</code> identify exactly one asymmetric key (<a href="#extensibility" class="auto internal xref">Section 9</a>).<a href="#section-4.2-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.2-2.3">
+            <p id="section-4.2-2.3.1"><code>aud</code>: the authorization server issuer identifier.  Its value <span class="bcp14">MUST</span> be one case-sensitive string, not an array.  The value <span class="bcp14">MUST</span> exactly equal the issuer identifier by which the authorization server identifies itself.  It is distinct from the Token Exchange <code>audience</code> request parameter and the DPoP <code>htu</code> claim.<a href="#section-4.2-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.2-2.4">
+            <p id="section-4.2-2.4.1"><code>iat</code>: the time at which the PRA was issued.<a href="#section-4.2-2.4.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.2-2.5">
+            <p id="section-4.2-2.5.1"><code>exp</code>: the expiration time.  A PRA <span class="bcp14">SHOULD</span> be short-lived, and an authorization server <span class="bcp14">MUST</span> enforce a maximum PRA lifetime according to local policy.<a href="#section-4.2-2.5.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-4.2-3">A PRA <span class="bcp14">MAY</span> contain:<a href="#section-4.2-3" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-4.2-4.1">
+            <p id="section-4.2-4.1.1"><code>jti</code>: an identifier for audit, profile-defined one-time use, or profile-defined revocation.  Reuse of a PRA <code>jti</code> is not by itself a replay because a PRA authorizes a key and can be used more than once during its validity interval unless a profile says otherwise.<a href="#section-4.2-4.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-4.2-4.2">
+            <p id="section-4.2-4.2.1"><code>presenter_limits</code>: a JSON object restricting the Token Exchange result as specified in <a href="#limits" class="auto internal xref">Section 5</a>.  Its defined members are <code>audience</code>, <code>resource</code>, and <code>scope</code>.  An authorization server <span class="bcp14">MUST</span> reject a member it does not recognize; recognized members are those registered per <a href="#iana-limits" class="auto internal xref">Section 12.3</a> and supported by the authorization server.<a href="#section-4.2-4.2.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-4.2-5">Other claims <span class="bcp14">MUST NOT</span> be interpreted as identifying the Original Presenter or granting authority unless an applicable profile explicitly defines that meaning and its validation rules.<a href="#section-4.2-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="key-identification">
+<section id="section-4.3">
+        <h3 id="name-confirmation-key-identifica">
+<a href="#section-4.3" class="section-number selfRef">4.3. </a><a href="#name-confirmation-key-identifica" class="section-name selfRef">Confirmation-Key Identification</a>
+        </h3>
+<p id="section-4.3-1">The authorization server reduces the validated Source Token's <code>cnf</code> claim to one expected JWK SHA-256 Thumbprint.  A <code>cnf</code> containing <code>jkt</code> supplies that value directly.  A <code>cnf</code> containing a public asymmetric <code>jwk</code> supplies the value obtained by applying <span>[<a href="#RFC7638" class="cite xref">RFC7638</a>]</span> with SHA-256.<a href="#section-4.3-1" class="pilcrow">¶</a></p>
+<p id="section-4.3-2">The authorization server <span class="bcp14">MUST</span> reject presenter rebinding when the Source Token's <code>cnf</code> identifies a symmetric key, identifies more than one key, cannot be reduced to exactly one asymmetric public signing key or SHA-256 thumbprint, or uses an unsupported confirmation method.  The authorization server <span class="bcp14">MUST NOT</span> resolve the Source Confirmation Key from untrusted material supplied by the Recipient Presenter except for a public <code>jwk</code> whose thumbprint is compared with a trusted <code>jkt</code> from the validated Source Token.<a href="#section-4.3-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="pra-example">
+<section id="section-4.4">
+        <h3 id="name-example">
+<a href="#section-4.4" class="section-number selfRef">4.4. </a><a href="#name-example" class="section-name selfRef">Example</a>
+        </h3>
+<p id="section-4.4-1">The following abbreviated PRA authorizes <code>K_recipient</code> to present one Source Token at <code>https://idp.example</code> and limits the exchange result to one target audience.<a href="#section-4.4-1" class="pilcrow">¶</a></p>
+<span id="name-pra-protected-header"></span><figure id="figure-1">
+          <div class="lang-json sourcecode" id="section-4.4-2.1">
+<pre>
+{
+  "typ": "pra+jwt",
+  "alg": "ES256",
+  "jwk": { "kty": "EC", "crv": "P-256", "x": "...", "y": "..." }
+}
+</pre>
+</div>
+<figcaption><a href="#figure-1" class="selfRef">Figure 1</a>:
+<a href="#name-pra-protected-header" class="selfRef">PRA protected header</a>
+          </figcaption></figure>
+<span id="name-pra-claims"></span><figure id="figure-2">
+          <div class="lang-json sourcecode" id="section-4.4-3.1">
+<pre>
+{
+  "sth": "0Ei...source-token-hash...",
+  "cnf": { "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I" },
+  "aud": "https://idp.example",
+  "presenter_limits": {
+    "audience": ["https://gateway.example"]
+  },
+  "iat": 1785974400,
+  "exp": 1785974700,
+  "jti": "b1f0c8a2-9d3e-4a2b-9f1c-8e7d6c5b4a30"
+}
+</pre>
+</div>
+<figcaption><a href="#figure-2" class="selfRef">Figure 2</a>:
+<a href="#name-pra-claims" class="selfRef">PRA claims</a>
+          </figcaption></figure>
+</section>
+</div>
+</section>
+</div>
+<div id="limits">
+<section id="section-5">
+      <h2 id="name-presenter-limits">
+<a href="#section-5" class="section-number selfRef">5. </a><a href="#name-presenter-limits" class="section-name selfRef">Presenter Limits</a>
+      </h2>
+<p id="section-5-1"><code>presenter_limits</code> is an optional restriction on the result of the one Token Exchange request.  It is an upper bound, not a grant.  Successful PRA validation never overrides the Source Token's authorization rules, an administered relationship, a <code>may_act</code> claim, client or actor authentication, user authorization, or authorization-server policy.<a href="#section-5-1" class="pilcrow">¶</a></p>
+<p id="section-5-2">The object can contain:<a href="#section-5-2" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-5-3.1">
+          <p id="section-5-3.1.1"><code>audience</code>: an array of case-sensitive Token Exchange audience strings.  Every explicit audience requested, and every audience placed in an issued token as a result of the exchange, <span class="bcp14">MUST</span> be a member of this array.<a href="#section-5-3.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-5-3.2">
+          <p id="section-5-3.2.1"><code>resource</code>: an array of resource indicator URI strings <span>[<a href="#RFC8707" class="cite xref">RFC8707</a>]</span>.  Each member <span class="bcp14">MUST</span> be an absolute URI without a fragment component, as required by <span>[<a href="#RFC8707" class="cite xref">RFC8707</a>], <a href="https://rfc-editor.org/rfc/rfc8707#section-2" class="relref">Section 2</a></span>.  Every explicit resource requested, and every resource authorization represented in the issued token as a result of the exchange, <span class="bcp14">MUST</span> equal a member of this array by simple string comparison.  This specification defines no prefix, path-hierarchy, or wildcard relationship between resource indicators.  An authorization server that cannot determine containment by string comparison <span class="bcp14">MUST</span> reject the request.<a href="#section-5-3.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-5-3.3">
+          <p id="section-5-3.3.1"><code>scope</code>: a space-delimited set of scope values.  Every explicit scope requested, and every scope granted in the issued token, <span class="bcp14">MUST</span> be a member of this set.<a href="#section-5-3.3.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+<p id="section-5-4">When a member is absent, the PRA places no restriction on that dimension.  Defaults selected by the authorization server are still subject to a present limit: an omitted request parameter <span class="bcp14">MUST NOT</span> cause the server to issue an audience, resource authorization, or scope outside the corresponding limit.<a href="#section-5-4" class="pilcrow">¶</a></p>
+<p id="section-5-5">The authorization server <span class="bcp14">MAY</span> issue a result narrower than both the request and the Presenter Limits.  It <span class="bcp14">MUST NOT</span> issue a result broader than either.<a href="#section-5-5" class="pilcrow">¶</a></p>
+<p id="section-5-6">This specification does not define limits for <code>authorization_details</code>; a profile that needs such limits must define type-specific containment rules in an extension and register the member per <a href="#iana-limits" class="auto internal xref">Section 12.3</a>.  A profile whose base already carries <code>authorization_details</code> through Token Exchange therefore loses an upper bound on that dimension when it composes with this document, and needs such an extension to restore it.  <a href="#security-limits" class="auto internal xref">Section 10.7</a> states the requirements an extension must meet.<a href="#section-5-6" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="validation">
+<section id="section-6">
+      <h2 id="name-presentation-and-validation">
+<a href="#section-6" class="section-number selfRef">6. </a><a href="#name-presentation-and-validation" class="section-name selfRef">Presentation and Validation</a>
+      </h2>
+<p id="section-6-1">The Recipient Presenter sends the Source Token as the Token Exchange <code>subject_token</code>, the compact PRA in the <code>presenter_rebinding</code> parameter, and a DPoP proof in the <code>DPoP</code> HTTP header on the same request.<a href="#section-6-1" class="pilcrow">¶</a></p>
+<p id="section-6-2">The authorization server <span class="bcp14">MUST</span> perform the following checks.  Failure of any required check means that presenter rebinding is not authorized.  Every check <span class="bcp14">MUST</span> be performed against a single request: the Source Token, PRA, DPoP proof, and Token Exchange parameters <span class="bcp14">MUST</span> all be taken from the same HTTP request, and the authorization server <span class="bcp14">MUST NOT</span> combine artifacts drawn from different requests.<a href="#section-6-2" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-6-3">
+<li id="section-6-3.1">
+          <p id="section-6-3.1.1">Confirm that an applicable profile and local policy permit presenter rebinding for the Source Token type and request context.<a href="#section-6-3.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-6-3.2">
+          <p id="section-6-3.2.1">Validate the Source Token according to its token type and profile, including its cryptographic protection, issuer, audience, temporal validity, and every check not explicitly replaced by the applicable profile.  Reduce its <code>cnf</code> to exactly one expected Source Confirmation Key thumbprint per <a href="#key-identification" class="auto internal xref">Section 4.3</a>.<a href="#section-6-3.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-6-3.3">
+          <p id="section-6-3.3.1">Parse the PRA without accepting duplicate JSON member names.  Confirm that the protected header contains <code>typ</code>, <code>alg</code>, and a public <code>jwk</code> as required by <a href="#pra-header" class="auto internal xref">Section 4.1</a>.  Compute the header key's JWK SHA-256 Thumbprint and confirm that it equals the expected Source Confirmation Key thumbprint.  Verify the PRA signature with that header key and accepted <code>alg</code>.<a href="#section-6-3.3.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-6-3.4">
+          <p id="section-6-3.4.1">Confirm that <code>sth</code> equals the base64url encoding without padding of the SHA-256 digest of the ASCII octets of the exact decoded <code>subject_token</code> parameter, that <code>aud</code> exactly identifies the authorization server, and that <code>iat</code> and <code>exp</code> satisfy temporal-validity, clock-skew, and maximum-lifetime policy.  Apply <code>jti</code> replay or revocation state only when required by an applicable profile or local policy.<a href="#section-6-3.4.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-6-3.5">
+          <p id="section-6-3.5.1">Confirm that the PRA <code>cnf</code> contains only <code>jkt</code> and that its value is syntactically valid.  Validate the DPoP proof carried on this request according to <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span>, including its signature, <code>typ</code>, <code>alg</code>, <code>jwk</code>, <code>jti</code>, <code>htm</code>, <code>htu</code>, <code>iat</code>, and nonce when required.  Confirm that the DPoP public key's JWK SHA-256 Thumbprint exactly equals the PRA <code>cnf.jkt</code>.<a href="#section-6-3.5.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-6-3.6">
+          <p id="section-6-3.6.1">Validate the Token Exchange request, client and actor authentication, delegation relationship, and requested authorization under <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>]</span>, the applicable profile, and local policy.  Apply Presenter Limits per <a href="#limits" class="auto internal xref">Section 5</a> to both explicit request values and the proposed issued-token authorization.<a href="#section-6-3.6.1" class="pilcrow">¶</a></p>
+</li>
+      </ol>
+<p id="section-6-4">On success, the Source Token's proof-of-possession requirement for this Token Exchange presentation is satisfied by the holder of the PRA Recipient Presenter key.  This result establishes control of an authorized presentation key.  It does not establish the presenter's application-level identity or independently authorize the exchange.<a href="#section-6-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="token-exchange">
+<section id="section-7">
+      <h2 id="name-use-with-oauth-20-token-exc">
+<a href="#section-7" class="section-number selfRef">7. </a><a href="#name-use-with-oauth-20-token-exc" class="section-name selfRef">Use with OAuth 2.0 Token Exchange</a>
+      </h2>
+<div id="te-request">
+<section id="section-7.1">
+        <h3 id="name-request">
+<a href="#section-7.1" class="section-number selfRef">7.1. </a><a href="#name-request" class="section-name selfRef">Request</a>
+        </h3>
+<p id="section-7.1-1">This specification defines the following Token Exchange parameter:<a href="#section-7.1-1" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-7.1-2">
+          <dt id="section-7.1-2.1">
+<code>presenter_rebinding</code>:</dt>
+          <dd style="margin-left: 1.5em" id="section-7.1-2.2">
+            <p id="section-7.1-2.2.1">The compact JWS serialization of one PRA rooted in the <code>subject_token</code>'s confirmation key.  It is <span class="bcp14">REQUIRED</span> when the requester uses this mechanism and <span class="bcp14">MUST NOT</span> occur more than once.<a href="#section-7.1-2.2.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+</dl>
+<p id="section-7.1-3">The <code>subject_token</code> is the Source Token.  The PRA <code>aud</code> <span class="bcp14">MUST</span> be the authorization server's issuer identifier; it is not the token endpoint URI, the DPoP <code>htu</code>, or the requested token audience.<a href="#section-7.1-3" class="pilcrow">¶</a></p>
+<p id="section-7.1-4">The requester <span class="bcp14">MUST</span> send a DPoP proof on the same request, and the key proven by that DPoP proof <span class="bcp14">MUST</span> be the key identified by the PRA <code>cnf.jkt</code>.  <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span> permits at most one DPoP proof per request, and at the token endpoint that proof also determines the key to which the authorization server sender-constrains the issued token.  A requester using this mechanism therefore uses the Recipient Presenter key as its DPoP key for this request; it cannot present one key as the Recipient Presenter and a different key for sender-constraining.  An authorization server <span class="bcp14">MUST</span> reject a request whose DPoP proof is for a key other than the PRA <code>cnf.jkt</code>.<a href="#section-7.1-4" class="pilcrow">¶</a></p>
+<p id="section-7.1-5">This constrains only key control on this request.  It does not merge the Recipient Presenter and OAuth client roles, and client authentication remains an independent input per <a href="#security-separation" class="auto internal xref">Section 10.2</a>.<a href="#section-7.1-5" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="te-processing">
+<section id="section-7.2">
+        <h3 id="name-processing-and-output">
+<a href="#section-7.2" class="section-number selfRef">7.2. </a><a href="#name-processing-and-output" class="section-name selfRef">Processing and Output</a>
+        </h3>
+<p id="section-7.2-1">The authorization server validates the request according to <a href="#validation" class="auto internal xref">Section 6</a>.  If it issues a token, the authorization carried by that token <span class="bcp14">MUST</span> be within both normal authorization policy and any Presenter Limits.<a href="#section-7.2-1" class="pilcrow">¶</a></p>
+<p id="section-7.2-2">The authorization server <span class="bcp14">MUST</span> sender-constrain the issued token to the PRA Recipient Presenter key.  Because that key is also the key proven by the request's DPoP proof (<a href="#te-request" class="auto internal xref">Section 7.1</a>), this is the binding ordinary DPoP token-endpoint processing already produces.  Sender-constraining completes the presenter transition: the issued token has one current confirmation key, and a subsequent transition requires a new PRA signed by that key over the new token.<a href="#section-7.2-2" class="pilcrow">¶</a></p>
+<p id="section-7.2-3">An authorization server <span class="bcp14">MUST NOT</span> issue a bearer token in response to a request that uses presenter rebinding.  Doing so would convert a key-bound Source Token into an unbound credential and defeat both the Source Token's confirmation requirement and the one-hop invariant in <a href="#security-transitions" class="auto internal xref">Section 10.8</a>.  If the authorization server is unwilling to sender-constrain the requested token type, it <span class="bcp14">MUST</span> reject the request rather than issue an unbound token.<a href="#section-7.2-3" class="pilcrow">¶</a></p>
+<p id="section-7.2-4">An applicable delegation profile <span class="bcp14">MAY</span> allow the authorization server to record the Original Presenter as a prior actor in the issued token's <code>act</code> claim <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>]</span>.  It can do so only when the profile independently maps the Source Confirmation Key to an authenticated actor identity and authorizes that actor relationship.  A key thumbprint is not an actor identity, and a valid PRA alone is insufficient to create an <code>act</code> entry.<a href="#section-7.2-4" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="te-errors">
+<section id="section-7.3">
+        <h3 id="name-errors">
+<a href="#section-7.3" class="section-number selfRef">7.3. </a><a href="#name-errors" class="section-name selfRef">Errors</a>
+        </h3>
+<p id="section-7.3-1">Errors are returned according to <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>], <a href="https://rfc-editor.org/rfc/rfc8693#section-2.2.2" class="relref">Section 2.2.2</a></span> and <span>[<a href="#RFC6749" class="cite xref">RFC6749</a>], <a href="https://rfc-editor.org/rfc/rfc6749#section-5.2" class="relref">Section 5.2</a></span>.  When presenter rebinding is required, a missing or invalid <code>presenter_rebinding</code> parameter, PRA validation failure, DPoP failure, a DPoP proof for a key other than the PRA <code>cnf.jkt</code>, an inability to sender-constrain the requested token type per <a href="#te-processing" class="auto internal xref">Section 7.2</a>, or a request outside Presenter Limits uses <code>invalid_request</code>, except that an unacceptable <code>audience</code> or <code>resource</code> <span class="bcp14">SHOULD</span> use <code>invalid_target</code> as specified by <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>]</span>.  DPoP-specific error processing follows <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span>.  Error descriptions <span class="bcp14">SHOULD NOT</span> disclose which key, relationship, or policy input caused rejection.<a href="#section-7.3-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="metadata">
+<section id="section-7.4">
+        <h3 id="name-authorization-server-metada">
+<a href="#section-7.4" class="section-number selfRef">7.4. </a><a href="#name-authorization-server-metada" class="section-name selfRef">Authorization Server Metadata</a>
+        </h3>
+<p id="section-7.4-1">An authorization server advertises support in its metadata <span>[<a href="#RFC8414" class="cite xref">RFC8414</a>]</span> with the following <span class="bcp14">OPTIONAL</span> members:<a href="#section-7.4-1" class="pilcrow">¶</a></p>
+<span class="break"></span><dl class="dlParallel" id="section-7.4-2">
+          <dt id="section-7.4-2.1">
+<code>presenter_rebinding_supported</code>:</dt>
+          <dd style="margin-left: 1.5em" id="section-7.4-2.2">
+            <p id="section-7.4-2.2.1">Boolean value indicating support for the <code>presenter_rebinding</code> Token Exchange parameter and the validation rules in this document.  The value is <code>true</code> when supported.  If omitted, support is not indicated.  This metadata does not guarantee that any particular Source Token, algorithm, client, actor, or request will be accepted.<a href="#section-7.4-2.2.1" class="pilcrow">¶</a></p>
+</dd>
+          <dd class="break"></dd>
+<dt id="section-7.4-2.3">
+<code>presenter_rebinding_signing_alg_values_supported</code>:</dt>
+          <dd style="margin-left: 1.5em" id="section-7.4-2.4">
+            <p id="section-7.4-2.4.1">JSON array containing a list of the JWS <code>alg</code> values supported by the authorization server for the PRA signature.  The array <span class="bcp14">MUST NOT</span> contain <code>none</code> or a symmetric algorithm.  An authorization server that supports presenter rebinding <span class="bcp14">SHOULD</span> include this member, because <a href="#pra-header" class="auto internal xref">Section 4.1</a> requires it to reject algorithms outside its allowlist and <a href="#te-errors" class="auto internal xref">Section 7.3</a> discourages disclosing the reason for rejection.  If omitted, an Original Presenter has no discovery mechanism for the accepted algorithms and must obtain them out of band.<a href="#section-7.4-2.4.1" class="pilcrow">¶</a></p>
+</dd>
+        <dd class="break"></dd>
+</dl>
+</section>
+</div>
+</section>
+</div>
+<div id="profiles">
+<section id="section-8">
+      <h2 id="name-use-in-delegation-profiles">
+<a href="#section-8" class="section-number selfRef">8. </a><a href="#name-use-in-delegation-profiles" class="section-name selfRef">Use in Delegation Profiles</a>
+      </h2>
+<p id="section-8-1">A delegation profile can use a valid PRA as evidence that the Source Confirmation Key authorized a specific key handoff.  It <span class="bcp14">MUST</span> continue to authenticate and authorize the parties and relationship independently.<a href="#section-8-1" class="pilcrow">¶</a></p>
+<p id="section-8-2">A profile using this mechanism <span class="bcp14">MUST</span> define each of the following.  A profile that leaves any of them undefined has not specified a complete composition with this document:<a href="#section-8-2" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-8-3">
+<li id="section-8-3.1">
+          <p id="section-8-3.1.1">Which Source Tokens may be presented with a PRA, and in which request contexts, as the opt-in required by <a href="#scope" class="auto internal xref">Section 1.1</a>.<a href="#section-8-3.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-8-3.2">
+          <p id="section-8-3.2.1">How the Original Presenter obtains and authenticates the intended Recipient Presenter key, or which deployment mechanism supplies that process, as required by <a href="#recipient-key" class="auto internal xref">Section 10.3</a>.<a href="#section-8-3.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-8-3.3">
+          <p id="section-8-3.3.1">How the authorization server maps the Source Confirmation Key and the Recipient Presenter key to party identities, where those identities affect authorization or actor recording.<a href="#section-8-3.3.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-8-3.4">
+          <p id="section-8-3.4.1">How the PRA combines with the profile's other authorization inputs, including client and actor authentication, administered relationships, <code>may_act</code>, and exchange-time policy.<a href="#section-8-3.4.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-8-3.5">
+          <p id="section-8-3.5.1">Whether the profile authorizes recording the Original Presenter as a prior actor, and if so, the <code>act</code> depth and cycle limits required by <a href="#security-transitions" class="auto internal xref">Section 10.8</a>.<a href="#section-8-3.5.1" class="pilcrow">¶</a></p>
+</li>
+      </ol>
+<p id="section-8-4">A profile <span class="bcp14">MUST NOT</span> treat the PRA or Presenter Limits as a grant of authority.<a href="#section-8-4" class="pilcrow">¶</a></p>
+<p id="section-8-5">The Cross-Client Delegation profile <span>[<a href="#I-D.mcguinness-oauth-cross-client-delegation" class="cite xref">I-D.mcguinness-oauth-cross-client-delegation</a>]</span> composes with this document.  The following sketch is illustrative only; that profile's own composition section is the normative binding between the two documents, and it governs where the two differ.<a href="#section-8-5" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-8-6.1">
+          <p id="section-8-6.1.1">the Source Token is the Initiator's key-bound Identity Assertion;<a href="#section-8-6.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-8-6.2">
+          <p id="section-8-6.2.1">the Initiator controls the Source Confirmation Key and signs the PRA;<a href="#section-8-6.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-8-6.3">
+          <p id="section-8-6.3.1">the Delegate controls the Recipient Presenter key, submits the exchange, and proves possession with DPoP;<a href="#section-8-6.3.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-8-6.4">
+          <p id="section-8-6.4.1">the IdP is the authorization server; and<a href="#section-8-6.4.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-8-6.5">
+          <p id="section-8-6.5.1">the PRA is conjunctive with the administered cross-client relationship, <code>may_act</code> when present, Delegate client and actor authentication, and exchange-time policy.<a href="#section-8-6.5.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+</section>
+</div>
+<div id="extensibility">
+<section id="section-9">
+      <h2 id="name-extensibility">
+<a href="#section-9" class="section-number selfRef">9. </a><a href="#name-extensibility" class="section-name selfRef">Extensibility</a>
+      </h2>
+<p id="section-9-1">This document defines one artifact, one proof mechanism, and one binding of that artifact to a protocol exchange.  Each is an extension point.  This section states what an extension may add and what it <span class="bcp14">MUST NOT</span> change, so that additional profiles and use cases can compose without renegotiating the security model.<a href="#section-9-1" class="pilcrow">¶</a></p>
+<p id="section-9-2">An extension <span class="bcp14">MAY</span>:<a href="#section-9-2" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-9-3.1">
+          <p id="section-9-3.1.1">define an additional <code>presenter_limits</code> member, subject to <a href="#iana-limits" class="auto internal xref">Section 12.3</a> and to the containment requirements in <a href="#security-limits" class="auto internal xref">Section 10.7</a>;<a href="#section-9-3.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-9-3.2">
+          <p id="section-9-3.2.1">define an additional PRA confirmation method for <code>cnf</code>, together with the proof mechanism by which a Recipient Presenter demonstrates control of the identified key; or<a href="#section-9-3.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="section-9-3.3">
+          <p id="section-9-3.3.1">define an additional binding of the PRA to a protocol exchange other than the Token Exchange binding in <a href="#token-exchange" class="auto internal xref">Section 7</a>.  Such a binding <span class="bcp14">MUST</span> specify the value that <code>aud</code> carries for that exchange, how the PRA is transported, how the Recipient Presenter proves possession on the same request, and how the result of a successful presentation is constrained.  <a href="#scope" class="auto internal xref">Section 1.1</a> places use outside Token Exchange outside the scope of this document; it does not reserve it against a specification that supplies those definitions.<a href="#section-9-3.3.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+<p id="section-9-4">An extension <span class="bcp14">MUST</span> preserve each of the following invariants.  An extension that changes any of them is a different protocol and requires its own validation, revocation, privacy, and resource-exhaustion analysis:<a href="#section-9-4" class="pilcrow">¶</a></p>
+<ol start="1" type="1" class="normal type-1" id="section-9-5">
+<li id="section-9-5.1">
+          <p id="section-9-5.1.1"><strong>One hop.</strong>  A PRA authorizes one presenter transition.  A PRA <span class="bcp14">MUST NOT</span> be nested, chained, or interpreted as authorizing another PRA (<a href="#security-transitions" class="auto internal xref">Section 10.8</a>).<a href="#section-9-5.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-9-5.2">
+          <p id="section-9-5.2.1"><strong>One verifier.</strong>  A PRA names exactly one verifier in <code>aud</code>, as one case-sensitive string, and is valid only there.<a href="#section-9-5.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-9-5.3">
+          <p id="section-9-5.3.1"><strong>Exact token binding.</strong>  A PRA authorizes presentation of the one Source Token whose encoded octets <code>sth</code> covers, and of no other token.<a href="#section-9-5.3.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-9-5.4">
+          <p id="section-9-5.4.1"><strong>No presenter-chosen signing key.</strong>  The PRA signing key is determined by the validated Source Token's <code>cnf</code> claim.  A Recipient Presenter <span class="bcp14">MUST NOT</span> be able to influence which key verifies the PRA (<a href="#key-identification" class="auto internal xref">Section 4.3</a>).<a href="#section-9-5.4.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-9-5.5">
+          <p id="section-9-5.5.1"><strong>One recipient key, proven on the request.</strong>  A PRA identifies exactly one asymmetric recipient key, and control of that key is proven on the same request that carries the PRA.<a href="#section-9-5.5.1" class="pilcrow">¶</a></p>
+</li>
+        <li id="section-9-5.6">
+          <p id="section-9-5.6.1"><strong>Limits narrow only.</strong>  Presenter Limits and any extension to them are upper bounds.  They never grant authority, and their omission is never permission (<a href="#security-limits" class="auto internal xref">Section 10.7</a>).<a href="#section-9-5.6.1" class="pilcrow">¶</a></p>
+</li>
+      </ol>
+</section>
+</div>
+<div id="security">
+<section id="section-10">
+      <h2 id="name-security-considerations">
+<a href="#section-10" class="section-number selfRef">10. </a><a href="#name-security-considerations" class="section-name selfRef">Security Considerations</a>
+      </h2>
+<p id="section-10-1">The OAuth 2.0 Security Best Current Practice <span>[<a href="#RFC9700" class="cite xref">RFC9700</a>]</span> and JWT Best Current Practices <span>[<a href="#RFC8725" class="cite xref">RFC8725</a>]</span> apply in addition to this section.<a href="#section-10-1" class="pilcrow">¶</a></p>
+<div id="security-opt-in">
+<section id="section-10.1">
+        <h3 id="name-explicit-acceptance-of-rebi">
+<a href="#section-10.1" class="section-number selfRef">10.1. </a><a href="#name-explicit-acceptance-of-rebi" class="section-name selfRef">Explicit Acceptance of Rebinding</a>
+        </h3>
+<p id="section-10.1-1">Key binding ordinarily assures a verifier that the presenter controls the key selected when the token was issued.  Presenter rebinding deliberately permits a different key to satisfy that requirement for one Token Exchange presentation.  This is an authorization-semantic change, not a generic consequence of RFC 7800.  Authorization servers <span class="bcp14">MUST</span> opt in for each applicable Source Token profile and request context and <span class="bcp14">MUST</span> continue to enforce issuer and deployment policy.<a href="#section-10.1-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-separation">
+<section id="section-10.2">
+        <h3 id="name-separation-of-key-control-i">
+<a href="#section-10.2" class="section-number selfRef">10.2. </a><a href="#name-separation-of-key-control-i" class="section-name selfRef">Separation of Key Control, Identity, and Authority</a>
+        </h3>
+<p id="section-10.2-1">The Source Token authenticates its issuer and establishes the Source Confirmation Key.  The PRA proves authorization from that key to the Recipient Presenter key.  DPoP proves control of the Recipient Presenter key on the request.  None of those facts alone identifies the party controlling a key or authorizes an OAuth delegation relationship.  Client authentication, actor authentication, administered relationships, <code>may_act</code>, consent, and authorization-server policy remain independent and conjunctive inputs.<a href="#section-10.2-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="recipient-key">
+<section id="section-10.3">
+        <h3 id="name-recipient-key-authenticatio">
+<a href="#section-10.3" class="section-number selfRef">10.3. </a><a href="#name-recipient-key-authenticatio" class="section-name selfRef">Recipient Key Authentication</a>
+        </h3>
+<p id="section-10.3-1">Before signing a PRA, the Original Presenter <span class="bcp14">MUST</span> obtain the intended recipient's JWK or thumbprint through an authenticated, integrity-protected process providing the assurance required by the application.  If an attacker substitutes its own key before signature, the resulting PRA validly authorizes that attacker key.  A consuming profile <span class="bcp14">MUST</span> define the key-distribution and authentication process or identify the deployment mechanism that supplies it.<a href="#section-10.3-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-replay">
+<section id="section-10.4">
+        <h3 id="name-replay-and-freshness">
+<a href="#section-10.4" class="section-number selfRef">10.4. </a><a href="#name-replay-and-freshness" class="section-name selfRef">Replay and Freshness</a>
+        </h3>
+<p id="section-10.4-1">A captured Source Token and PRA cannot be used without control of the Recipient Presenter key.  Binding the PRA to the exact Source Token, one authorization server, one recipient key, and a short validity interval limits replay.  DPoP provides per-request replay protection through its <code>jti</code>, <code>iat</code>, request target, method, and nonce when used.<a href="#section-10.4-1" class="pilcrow">¶</a></p>
+<p id="section-10.4-2">A PRA is not one-time-use by default.  A deployment that requires one-time use needs atomic replay-cache processing and retry semantics keyed by <code>jti</code>; such a deployment requires <code>jti</code> by policy.  Offline revocation of a PRA is unavailable unless a profile defines a lookup mechanism, so short lifetimes are the primary control.<a href="#section-10.4-2" class="pilcrow">¶</a></p>
+<p id="section-10.4-3">This has an aggregate consequence that Original Presenters need to account for.  Presenter Limits bound the result of one Token Exchange request, not the total authorization obtainable from one PRA.  Until the PRA expires, the Recipient Presenter can repeat the exchange and obtain a separate token for each audience, resource, and scope combination the limits and policy allow.  A PRA limited to three audiences authorizes up to three tokens, not one.  Presenter Limits cannot express a single-use restriction, and no authorization server check derives one from them.  A deployment that needs exactly one exchange requires the profile-defined one-time-use processing described above.  Absent that, an Original Presenter <span class="bcp14">SHOULD</span> keep the PRA lifetime close to the time the recipient needs to make its request.<a href="#section-10.4-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-request-binding">
+<section id="section-10.5">
+        <h3 id="name-request-binding">
+<a href="#section-10.5" class="section-number selfRef">10.5. </a><a href="#name-request-binding" class="section-name selfRef">Request Binding</a>
+        </h3>
+<p id="section-10.5-1">PRA <code>aud</code> and DPoP request binding provide different protections.  <code>aud</code> expresses authorization for one authorization server.  DPoP <code>htu</code> and <code>htm</code> bind proof of the recipient key to one HTTP target and method.  Both <span class="bcp14">MUST</span> be checked.<a href="#section-10.5-1" class="pilcrow">¶</a></p>
+<p id="section-10.5-2">DPoP does not cover the HTTP request body.  The authorization server <span class="bcp14">MUST</span> process the Source Token, PRA, and Token Exchange parameters from the same TLS-protected request on which it validates DPoP.  Presenter Limits cryptographically express upper bounds selected by the Original Presenter, but normal TLS and request processing remain necessary to prevent parameter mixing.<a href="#section-10.5-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-substitution">
+<section id="section-10.6">
+        <h3 id="name-token-and-key-substitution">
+<a href="#section-10.6" class="section-number selfRef">10.6. </a><a href="#name-token-and-key-substitution" class="section-name selfRef">Token and Key Substitution</a>
+        </h3>
+<p id="section-10.6-1">The <code>sth</code> claim prevents a PRA created for one Source Token from being combined with another.  Matching the PRA header <code>jwk</code> thumbprint to the validated Source Token <code>cnf</code> prevents a Recipient Presenter from choosing the PRA signing key.  Matching PRA <code>cnf.jkt</code> to the DPoP key prevents substitution of the current presenter proof.<a href="#section-10.6-1" class="pilcrow">¶</a></p>
+<p id="section-10.6-2">Original Presenters <span class="bcp14">SHOULD</span> use confirmation keys dedicated to key-bound tokens.  Signing APIs <span class="bcp14">MUST</span> bind the <code>pra+jwt</code> type and intended operation so that an attacker cannot use a generic signing oracle to obtain a PRA.<a href="#section-10.6-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-limits">
+<section id="section-10.7">
+        <h3 id="name-presenter-limits-are-not-gr">
+<a href="#section-10.7" class="section-number selfRef">10.7. </a><a href="#name-presenter-limits-are-not-gr" class="section-name selfRef">Presenter Limits Are Not Grants</a>
+        </h3>
+<p id="section-10.7-1">Presenter Limits only narrow authorization.  An authorization server <span class="bcp14">MUST</span> apply all other authorization inputs independently and <span class="bcp14">MUST NOT</span> treat omission of a limit as permission.  It <span class="bcp14">MUST</span> check the authorization actually placed in the issued token so that default processing cannot exceed a present limit.<a href="#section-10.7-1" class="pilcrow">¶</a></p>
+<p id="section-10.7-2">This specification omits generic <code>authorization_details</code> containment because arbitrary authorization-detail types do not share a safe comparison operation.  Extensions adding such limits must define type-specific semantics and fail closed when containment cannot be determined.<a href="#section-10.7-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-transitions">
+<section id="section-10.8">
+        <h3 id="name-subsequent-presenter-transi">
+<a href="#section-10.8" class="section-number selfRef">10.8. </a><a href="#name-subsequent-presenter-transi" class="section-name selfRef">Subsequent Presenter Transitions</a>
+        </h3>
+<p id="section-10.8-1">The Recipient Presenter cannot extend a PRA or sign a PRA for the original Source Token because it does not hold the Source Confirmation Key.  A later transition requires a successful exchange yielding a new token bound to the current presenter's key.  This forces the authorization server to reevaluate policy at every transition and keeps the PRA proof path constant in size, avoiding recursive parsing, cycle handling, and offline propagation of authority.<a href="#section-10.8-1" class="pilcrow">¶</a></p>
+<p id="section-10.8-2">The proof path is bounded; the actor history is not.  Each transition that a profile authorizes can add one <code>act</code> entry to the issued token per <a href="#te-processing" class="auto internal xref">Section 7.2</a>, so repeated presenter transitions grow that nesting one level at a time even though no PRA is ever nested.  This specification does not bound <code>act</code> depth, detect cycles among prior actors, or define disclosure rules for actor history.  A profile that authorizes actor recording <span class="bcp14">MUST</span> specify those limits; see also the OAuth Actor Profile for Delegation <span>[<a href="#I-D.mcguinness-oauth-actor-profile" class="cite xref">I-D.mcguinness-oauth-actor-profile</a>]</span>.<a href="#section-10.8-2" class="pilcrow">¶</a></p>
+<p id="section-10.8-3">Implementations <span class="bcp14">MUST NOT</span> accept a nested PRA or interpret a PRA as authorizing another PRA.  A specification that defines offline multi-hop delegation is a different protocol and requires separate validation, revocation, privacy, and resource-exhaustion analysis.<a href="#section-10.8-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-downgrade">
+<section id="section-10.9">
+        <h3 id="name-downgrade-and-confusion">
+<a href="#section-10.9" class="section-number selfRef">10.9. </a><a href="#name-downgrade-and-confusion" class="section-name selfRef">Downgrade and Confusion</a>
+        </h3>
+<p id="section-10.9-1">An authorization server <span class="bcp14">MUST NOT</span> accept bearer presentation of a key-bound Source Token because a PRA is absent or invalid.  The Source Token requires either direct proof of its confirmation key under its own profile or a valid PRA and matching recipient DPoP proof under this specification.<a href="#section-10.9-1" class="pilcrow">¶</a></p>
+<p id="section-10.9-2">The output side requires the same discipline.  Issuing a bearer token from a successful presenter-rebinding exchange downgrades the Source Token's key binding one step later: the recipient obtains a replayable credential derived from a token that could only ever be presented with a key.  <a href="#te-processing" class="auto internal xref">Section 7.2</a> therefore requires the issued token to be sender-constrained to the Recipient Presenter key and requires the authorization server to reject the request rather than issue an unbound token.<a href="#section-10.9-2" class="pilcrow">¶</a></p>
+<p id="section-10.9-3">The explicit <code>pra+jwt</code> type and mutually exclusive validation rules distinguish a PRA from a Source Token, access token, ID Token, client assertion, and DPoP proof.  An authorization server <span class="bcp14">MUST</span> validate each artifact only under the rules for its protocol position.<a href="#section-10.9-3" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="security-domains">
+<section id="section-10.10">
+        <h3 id="name-trust-domains">
+<a href="#section-10.10" class="section-number selfRef">10.10. </a><a href="#name-trust-domains" class="section-name selfRef">Trust Domains</a>
+        </h3>
+<p id="section-10.10-1">The authorization server can validate a PRA only if it can validate the Source Token and obtain its confirmation-key identifier without trusting presenter-supplied key resolution.  Across trust domains, the authorization server must trust the Source Token issuer, token profile, and confirmation method.  Establishing that trust is outside this specification.<a href="#section-10.10-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+</section>
+</div>
+<div id="privacy">
+<section id="section-11">
+      <h2 id="name-privacy-considerations">
+<a href="#section-11" class="section-number selfRef">11. </a><a href="#name-privacy-considerations" class="section-name selfRef">Privacy Considerations</a>
+      </h2>
+<p id="section-11-1">A PRA discloses the Source Confirmation public key and Recipient Presenter key thumbprint to the authorization server.  These values can become correlation handles.  Parties <span class="bcp14">SHOULD</span> use keys with the narrowest practical lifetime and scope and <span class="bcp14">SHOULD</span> avoid reusing a recipient key across unrelated relationships when correlation is a concern.<a href="#section-11-1" class="pilcrow">¶</a></p>
+<p id="section-11-2">Unlike an offline delegation chain, a PRA does not disclose intermediate key paths.  Actor history is included in an issued token only when required and authorized by an applicable profile, allowing that profile and issuer to apply its disclosure policy.<a href="#section-11-2" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="iana">
+<section id="section-12">
+      <h2 id="name-iana-considerations">
+<a href="#section-12" class="section-number selfRef">12. </a><a href="#name-iana-considerations" class="section-name selfRef">IANA Considerations</a>
+      </h2>
+<div id="iana-media-type">
+<section id="section-12.1">
+        <h3 id="name-media-type-registration">
+<a href="#section-12.1" class="section-number selfRef">12.1. </a><a href="#name-media-type-registration" class="section-name selfRef">Media Type Registration</a>
+        </h3>
+<p id="section-12.1-1">This document requests registration of the following media type in the "Media Types" registry, following the procedures of <span>[<a href="#RFC6838" class="cite xref">RFC6838</a>]</span>, for use as the <code>typ</code> JOSE header value of a Presenter Rebinding Assertion.  As permitted by <span>[<a href="#RFC7515" class="cite xref">RFC7515</a>], <a href="https://rfc-editor.org/rfc/rfc7515#section-4.1.9" class="relref">Section 4.1.9</a></span>, the <code>application/</code> prefix is omitted in the <code>typ</code> value.<a href="#section-12.1-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.1-2.1">
+            <p id="section-12.1-2.1.1">Type name: application<a href="#section-12.1-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.2">
+            <p id="section-12.1-2.2.1">Subtype name: pra+jwt<a href="#section-12.1-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.3">
+            <p id="section-12.1-2.3.1">Required parameters: N/A<a href="#section-12.1-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.4">
+            <p id="section-12.1-2.4.1">Optional parameters: N/A<a href="#section-12.1-2.4.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.5">
+            <p id="section-12.1-2.5.1">Encoding considerations: binary; a PRA is a JWT represented as base64url-encoded values separated by periods<a href="#section-12.1-2.5.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.6">
+            <p id="section-12.1-2.6.1">Security considerations: See <a href="#security" class="auto internal xref">Section 10</a> and Section 11 of <span>[<a href="#RFC7519" class="cite xref">RFC7519</a>]</span><a href="#section-12.1-2.6.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.7">
+            <p id="section-12.1-2.7.1">Interoperability considerations: N/A<a href="#section-12.1-2.7.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.8">
+            <p id="section-12.1-2.8.1">Published specification: this document<a href="#section-12.1-2.8.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.9">
+            <p id="section-12.1-2.9.1">Applications that use this media type: OAuth applications rebinding presentation of proof-of-possession tokens<a href="#section-12.1-2.9.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.10">
+            <p id="section-12.1-2.10.1">Fragment identifier considerations: N/A<a href="#section-12.1-2.10.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.11">
+            <p id="section-12.1-2.11.1">Additional information: Magic number(s): N/A; File extension(s): N/A; Macintosh file type code(s): N/A<a href="#section-12.1-2.11.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.12">
+            <p id="section-12.1-2.12.1">Person and email address to contact for further information: Karl McGuinness, public@karlmcguinness.com<a href="#section-12.1-2.12.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.13">
+            <p id="section-12.1-2.13.1">Intended usage: COMMON<a href="#section-12.1-2.13.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.14">
+            <p id="section-12.1-2.14.1">Restrictions on usage: N/A<a href="#section-12.1-2.14.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.15">
+            <p id="section-12.1-2.15.1">Author: Karl McGuinness<a href="#section-12.1-2.15.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.16">
+            <p id="section-12.1-2.16.1">Change controller: IETF<a href="#section-12.1-2.16.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.1-2.17">
+            <p id="section-12.1-2.17.1">Provisional registration: No<a href="#section-12.1-2.17.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+<div id="iana-claims">
+<section id="section-12.2">
+        <h3 id="name-json-web-token-claims-regis">
+<a href="#section-12.2" class="section-number selfRef">12.2. </a><a href="#name-json-web-token-claims-regis" class="section-name selfRef">JSON Web Token Claims Registration</a>
+        </h3>
+<p id="section-12.2-1">This document requests registration of the following claims in the "JSON Web Token Claims" registry established by <span>[<a href="#RFC7519" class="cite xref">RFC7519</a>]</span>.  The <code>cnf</code>, <code>aud</code>, <code>iat</code>, <code>exp</code>, and <code>jti</code> claims are already registered and are used without new registration.<a href="#section-12.2-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.2-2.1">
+            <p id="section-12.2-2.1.1">Claim Name: <code>sth</code><a href="#section-12.2-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.2-2.2">
+            <p id="section-12.2-2.2.1">Claim Description: Source Token Hash; base64url-encoded SHA-256 digest of the token whose presenter is being rebound<a href="#section-12.2-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.2-2.3">
+            <p id="section-12.2-2.3.1">Change Controller: IESG<a href="#section-12.2-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.2-2.4">
+            <p id="section-12.2-2.4.1">Specification Document: <a href="#pra-claims" class="auto internal xref">Section 4.2</a> of this document<a href="#section-12.2-2.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-12.2-3">and:<a href="#section-12.2-3" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.2-4.1">
+            <p id="section-12.2-4.1.1">Claim Name: <code>presenter_limits</code><a href="#section-12.2-4.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.2-4.2">
+            <p id="section-12.2-4.2.1">Claim Description: Upper bounds on authorization resulting from a presenter-rebound Token Exchange<a href="#section-12.2-4.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.2-4.3">
+            <p id="section-12.2-4.3.1">Change Controller: IESG<a href="#section-12.2-4.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.2-4.4">
+            <p id="section-12.2-4.4.1">Specification Document: <a href="#pra-claims" class="auto internal xref">Section 4.2</a> and <a href="#limits" class="auto internal xref">Section 5</a> of this document<a href="#section-12.2-4.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+<div id="iana-limits">
+<section id="section-12.3">
+        <h3 id="name-presenter-limits-members-re">
+<a href="#section-12.3" class="section-number selfRef">12.3. </a><a href="#name-presenter-limits-members-re" class="section-name selfRef">Presenter Limits Members Registry</a>
+        </h3>
+<p id="section-12.3-1">This document requests creation of a new registry, "Presenter Limits Members", to hold the members defined for the <code>presenter_limits</code> claim (<a href="#limits" class="auto internal xref">Section 5</a>).  Without a registry, independent extensions can choose the same member name with no arbiter, and <a href="#pra-claims" class="auto internal xref">Section 4.2</a> requires an authorization server to reject an unrecognized member, so a collision fails closed but is not detectable at registration time.<a href="#section-12.3-1" class="pilcrow">¶</a></p>
+<p id="section-12.3-2">The registration procedure is Specification Required.  The designated expert is directed to confirm that a proposed member specifies a containment rule that compares a requested value and the corresponding authorization in the issued token, that the rule can be evaluated by simple comparison or is otherwise fully specified, and that it fails closed when containment cannot be determined, as required by <a href="#security-limits" class="auto internal xref">Section 10.7</a>.  A member that can broaden the result of an exchange <span class="bcp14">MUST NOT</span> be registered.<a href="#section-12.3-2" class="pilcrow">¶</a></p>
+<p id="section-12.3-3">Each registration contains a Member Name, a Description, a Change Controller, and a Specification Document.  The initial contents are the three members defined by this document:<a href="#section-12.3-3" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.3-4.1">
+            <p id="section-12.3-4.1.1">Member Name: <code>audience</code>; Description: Upper bound on Token Exchange target audiences; Change Controller: IESG; Specification Document: <a href="#limits" class="auto internal xref">Section 5</a> of this document<a href="#section-12.3-4.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.3-4.2">
+            <p id="section-12.3-4.2.1">Member Name: <code>resource</code>; Description: Upper bound on resource indicators; Change Controller: IESG; Specification Document: <a href="#limits" class="auto internal xref">Section 5</a> of this document<a href="#section-12.3-4.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.3-4.3">
+            <p id="section-12.3-4.3.1">Member Name: <code>scope</code>; Description: Upper bound on granted scope values; Change Controller: IESG; Specification Document: <a href="#limits" class="auto internal xref">Section 5</a> of this document<a href="#section-12.3-4.3.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+<div id="iana-parameter">
+<section id="section-12.4">
+        <h3 id="name-oauth-parameters-registrati">
+<a href="#section-12.4" class="section-number selfRef">12.4. </a><a href="#name-oauth-parameters-registrati" class="section-name selfRef">OAuth Parameters Registration</a>
+        </h3>
+<p id="section-12.4-1">This document requests registration of the following value in the "OAuth Parameters" registry established by <span>[<a href="#RFC6749" class="cite xref">RFC6749</a>]</span>.<a href="#section-12.4-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.4-2.1">
+            <p id="section-12.4-2.1.1">Parameter name: <code>presenter_rebinding</code><a href="#section-12.4-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.4-2.2">
+            <p id="section-12.4-2.2.1">Parameter usage location: token request<a href="#section-12.4-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.4-2.3">
+            <p id="section-12.4-2.3.1">Change Controller: IESG<a href="#section-12.4-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.4-2.4">
+            <p id="section-12.4-2.4.1">Specification Document: <a href="#te-request" class="auto internal xref">Section 7.1</a> of this document<a href="#section-12.4-2.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+<div id="iana-metadata">
+<section id="section-12.5">
+        <h3 id="name-oauth-authorization-server-">
+<a href="#section-12.5" class="section-number selfRef">12.5. </a><a href="#name-oauth-authorization-server-" class="section-name selfRef">OAuth Authorization Server Metadata Registration</a>
+        </h3>
+<p id="section-12.5-1">This document requests registration of the following values in the "OAuth Authorization Server Metadata" registry established by <span>[<a href="#RFC8414" class="cite xref">RFC8414</a>]</span>.<a href="#section-12.5-1" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.5-2.1">
+            <p id="section-12.5-2.1.1">Metadata Name: <code>presenter_rebinding_supported</code><a href="#section-12.5-2.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.5-2.2">
+            <p id="section-12.5-2.2.1">Metadata Description: Boolean indicating authorization server support for presenter rebinding in OAuth 2.0 Token Exchange<a href="#section-12.5-2.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.5-2.3">
+            <p id="section-12.5-2.3.1">Change Controller: IESG<a href="#section-12.5-2.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.5-2.4">
+            <p id="section-12.5-2.4.1">Specification Document: <a href="#metadata" class="auto internal xref">Section 7.4</a> of this document<a href="#section-12.5-2.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+<p id="section-12.5-3">and:<a href="#section-12.5-3" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="section-12.5-4.1">
+            <p id="section-12.5-4.1.1">Metadata Name: <code>presenter_rebinding_signing_alg_values_supported</code><a href="#section-12.5-4.1.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.5-4.2">
+            <p id="section-12.5-4.2.1">Metadata Description: JSON array of JWS <code>alg</code> values supported by the authorization server for Presenter Rebinding Assertion signatures<a href="#section-12.5-4.2.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.5-4.3">
+            <p id="section-12.5-4.3.1">Change Controller: IESG<a href="#section-12.5-4.3.1" class="pilcrow">¶</a></p>
+</li>
+          <li class="normal" id="section-12.5-4.4">
+            <p id="section-12.5-4.4.1">Specification Document: <a href="#metadata" class="auto internal xref">Section 7.4</a> of this document<a href="#section-12.5-4.4.1" class="pilcrow">¶</a></p>
+</li>
+        </ul>
+</section>
+</div>
+</section>
+</div>
+<div id="sec-combined-references">
+<section id="section-13">
+      <h2 id="name-references">
+<a href="#section-13" class="section-number selfRef">13. </a><a href="#name-references" class="section-name selfRef">References</a>
+      </h2>
+<div id="sec-normative-references">
+<section id="section-13.1">
+        <h3 id="name-normative-references">
+<a href="#section-13.1" class="section-number selfRef">13.1. </a><a href="#name-normative-references" class="section-name selfRef">Normative References</a>
+        </h3>
+<dl class="references">
+<dt id="RFC2119">[RFC2119]</dt>
+        <dd>
+<span class="refAuthor">Bradner, S.</span>, <span class="refTitle">"Key words for use in RFCs to Indicate Requirement Levels"</span>, <span class="seriesInfo">BCP 14</span>, <span class="seriesInfo">RFC 2119</span>, <span class="seriesInfo">DOI 10.17487/RFC2119</span>, <time datetime="1997-03" class="refDate">March 1997</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc2119">https://www.rfc-editor.org/rfc/rfc2119</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC6749">[RFC6749]</dt>
+        <dd>
+<span class="refAuthor">Hardt, D., Ed.</span>, <span class="refTitle">"The OAuth 2.0 Authorization Framework"</span>, <span class="seriesInfo">RFC 6749</span>, <span class="seriesInfo">DOI 10.17487/RFC6749</span>, <time datetime="2012-10" class="refDate">October 2012</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc6749">https://www.rfc-editor.org/rfc/rfc6749</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC6838">[RFC6838]</dt>
+        <dd>
+<span class="refAuthor">Freed, N.</span>, <span class="refAuthor">Klensin, J.</span>, and <span class="refAuthor">T. Hansen</span>, <span class="refTitle">"Media Type Specifications and Registration Procedures"</span>, <span class="seriesInfo">BCP 13</span>, <span class="seriesInfo">RFC 6838</span>, <span class="seriesInfo">DOI 10.17487/RFC6838</span>, <time datetime="2013-01" class="refDate">January 2013</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc6838">https://www.rfc-editor.org/rfc/rfc6838</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC7515">[RFC7515]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span>, <span class="refAuthor">Bradley, J.</span>, and <span class="refAuthor">N. Sakimura</span>, <span class="refTitle">"JSON Web Signature (JWS)"</span>, <span class="seriesInfo">RFC 7515</span>, <span class="seriesInfo">DOI 10.17487/RFC7515</span>, <time datetime="2015-05" class="refDate">May 2015</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc7515">https://www.rfc-editor.org/rfc/rfc7515</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC7517">[RFC7517]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span>, <span class="refTitle">"JSON Web Key (JWK)"</span>, <span class="seriesInfo">RFC 7517</span>, <span class="seriesInfo">DOI 10.17487/RFC7517</span>, <time datetime="2015-05" class="refDate">May 2015</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc7517">https://www.rfc-editor.org/rfc/rfc7517</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC7519">[RFC7519]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span>, <span class="refAuthor">Bradley, J.</span>, and <span class="refAuthor">N. Sakimura</span>, <span class="refTitle">"JSON Web Token (JWT)"</span>, <span class="seriesInfo">RFC 7519</span>, <span class="seriesInfo">DOI 10.17487/RFC7519</span>, <time datetime="2015-05" class="refDate">May 2015</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc7519">https://www.rfc-editor.org/rfc/rfc7519</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC7638">[RFC7638]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span> and <span class="refAuthor">N. Sakimura</span>, <span class="refTitle">"JSON Web Key (JWK) Thumbprint"</span>, <span class="seriesInfo">RFC 7638</span>, <span class="seriesInfo">DOI 10.17487/RFC7638</span>, <time datetime="2015-09" class="refDate">September 2015</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc7638">https://www.rfc-editor.org/rfc/rfc7638</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC7800">[RFC7800]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span>, <span class="refAuthor">Bradley, J.</span>, and <span class="refAuthor">H. Tschofenig</span>, <span class="refTitle">"Proof-of-Possession Key Semantics for JSON Web Tokens (JWTs)"</span>, <span class="seriesInfo">RFC 7800</span>, <span class="seriesInfo">DOI 10.17487/RFC7800</span>, <time datetime="2016-04" class="refDate">April 2016</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc7800">https://www.rfc-editor.org/rfc/rfc7800</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8174">[RFC8174]</dt>
+        <dd>
+<span class="refAuthor">Leiba, B.</span>, <span class="refTitle">"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"</span>, <span class="seriesInfo">BCP 14</span>, <span class="seriesInfo">RFC 8174</span>, <span class="seriesInfo">DOI 10.17487/RFC8174</span>, <time datetime="2017-05" class="refDate">May 2017</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8174">https://www.rfc-editor.org/rfc/rfc8174</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8414">[RFC8414]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span>, <span class="refAuthor">Sakimura, N.</span>, and <span class="refAuthor">J. Bradley</span>, <span class="refTitle">"OAuth 2.0 Authorization Server Metadata"</span>, <span class="seriesInfo">RFC 8414</span>, <span class="seriesInfo">DOI 10.17487/RFC8414</span>, <time datetime="2018-06" class="refDate">June 2018</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8414">https://www.rfc-editor.org/rfc/rfc8414</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8693">[RFC8693]</dt>
+        <dd>
+<span class="refAuthor">Jones, M.</span>, <span class="refAuthor">Nadalin, A.</span>, <span class="refAuthor">Campbell, B., Ed.</span>, <span class="refAuthor">Bradley, J.</span>, and <span class="refAuthor">C. Mortimore</span>, <span class="refTitle">"OAuth 2.0 Token Exchange"</span>, <span class="seriesInfo">RFC 8693</span>, <span class="seriesInfo">DOI 10.17487/RFC8693</span>, <time datetime="2020-01" class="refDate">January 2020</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8693">https://www.rfc-editor.org/rfc/rfc8693</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8707">[RFC8707]</dt>
+        <dd>
+<span class="refAuthor">Campbell, B.</span>, <span class="refAuthor">Bradley, J.</span>, and <span class="refAuthor">H. Tschofenig</span>, <span class="refTitle">"Resource Indicators for OAuth 2.0"</span>, <span class="seriesInfo">RFC 8707</span>, <span class="seriesInfo">DOI 10.17487/RFC8707</span>, <time datetime="2020-02" class="refDate">February 2020</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8707">https://www.rfc-editor.org/rfc/rfc8707</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC8725">[RFC8725]</dt>
+        <dd>
+<span class="refAuthor">Sheffer, Y.</span>, <span class="refAuthor">Hardt, D.</span>, and <span class="refAuthor">M. Jones</span>, <span class="refTitle">"JSON Web Token Best Current Practices"</span>, <span class="seriesInfo">BCP 225</span>, <span class="seriesInfo">RFC 8725</span>, <span class="seriesInfo">DOI 10.17487/RFC8725</span>, <time datetime="2020-02" class="refDate">February 2020</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc8725">https://www.rfc-editor.org/rfc/rfc8725</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC9449">[RFC9449]</dt>
+      <dd>
+<span class="refAuthor">Fett, D.</span>, <span class="refAuthor">Campbell, B.</span>, <span class="refAuthor">Bradley, J.</span>, <span class="refAuthor">Lodderstedt, T.</span>, <span class="refAuthor">Jones, M.</span>, and <span class="refAuthor">D. Waite</span>, <span class="refTitle">"OAuth 2.0 Demonstrating Proof of Possession (DPoP)"</span>, <span class="seriesInfo">RFC 9449</span>, <span class="seriesInfo">DOI 10.17487/RFC9449</span>, <time datetime="2023-09" class="refDate">September 2023</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc9449">https://www.rfc-editor.org/rfc/rfc9449</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+</dl>
+</section>
+</div>
+<div id="sec-informative-references">
+<section id="section-13.2">
+        <h3 id="name-informative-references">
+<a href="#section-13.2" class="section-number selfRef">13.2. </a><a href="#name-informative-references" class="section-name selfRef">Informative References</a>
+        </h3>
+<dl class="references">
+<dt id="I-D.mcguinness-oauth-actor-profile">[I-D.mcguinness-oauth-actor-profile]</dt>
+        <dd>
+<span class="refAuthor">McGuinness, K.</span>, <span class="refTitle">"OAuth Actor Profile for Delegation"</span>, <time datetime="2026-04-30" class="refDate">30 April 2026</time>, <span>&lt;<a href="https://datatracker.ietf.org/doc/html/draft-mcguinness-oauth-actor-profile-00">https://datatracker.ietf.org/doc/html/draft-mcguinness-oauth-actor-profile-00</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="I-D.mcguinness-oauth-cross-client-delegation">[I-D.mcguinness-oauth-cross-client-delegation]</dt>
+        <dd>
+<span class="refAuthor">McGuinness, K.</span>, <span class="refTitle">"Cross-Client Delegation Profile for OAuth 2.0 Token Exchange"</span>, <time datetime="2026" class="refDate">2026</time>, <span>&lt;<a href="https://datatracker.ietf.org/doc/html/draft-mcguinness-oauth-cross-client-delegation">https://datatracker.ietf.org/doc/html/draft-mcguinness-oauth-cross-client-delegation</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="OpenID.KeyBinding">[OpenID.KeyBinding]</dt>
+        <dd>
+<span class="refAuthor">Hardt, D.</span> and <span class="refAuthor">E. Heilman</span>, <span class="refTitle">"OpenID Connect Key Binding 1.0 - draft 02"</span>, <time datetime="2026-06-24" class="refDate">24 June 2026</time>, <span>&lt;<a href="https://openid.net/specs/openid-connect-key-binding-1_0.html">https://openid.net/specs/openid-connect-key-binding-1_0.html</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC9068">[RFC9068]</dt>
+        <dd>
+<span class="refAuthor">Bertocci, V.</span>, <span class="refTitle">"JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens"</span>, <span class="seriesInfo">RFC 9068</span>, <span class="seriesInfo">DOI 10.17487/RFC9068</span>, <time datetime="2021-10" class="refDate">October 2021</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc9068">https://www.rfc-editor.org/rfc/rfc9068</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+<dt id="RFC9700">[RFC9700]</dt>
+      <dd>
+<span class="refAuthor">Lodderstedt, T.</span>, <span class="refAuthor">Bradley, J.</span>, <span class="refAuthor">Labunets, A.</span>, and <span class="refAuthor">D. Fett</span>, <span class="refTitle">"Best Current Practice for OAuth 2.0 Security"</span>, <span class="seriesInfo">BCP 240</span>, <span class="seriesInfo">RFC 9700</span>, <span class="seriesInfo">DOI 10.17487/RFC9700</span>, <time datetime="2025-01" class="refDate">January 2025</time>, <span>&lt;<a href="https://www.rfc-editor.org/rfc/rfc9700">https://www.rfc-editor.org/rfc/rfc9700</a>&gt;</span>. </dd>
+<dd class="break"></dd>
+</dl>
+</section>
+</div>
+</section>
+</div>
+<div id="appendix-example">
+<section id="appendix-A">
+      <h2 id="name-worked-example-cross-client">
+<a href="#appendix-A" class="section-number selfRef">Appendix A. </a><a href="#name-worked-example-cross-client" class="section-name selfRef">Worked Example: Cross-Client Delegation</a>
+      </h2>
+<p id="appendix-A-1">This informative example shows presenter rebinding used with the Cross-Client Delegation profile <span>[<a href="#I-D.mcguinness-oauth-cross-client-delegation" class="cite xref">I-D.mcguinness-oauth-cross-client-delegation</a>]</span> so that a Delegate can present a key-bound ID Token issued to an Initiator.<a href="#appendix-A-1" class="pilcrow">¶</a></p>
+<p id="appendix-A-2">The Initiator holds an ID Token bound to <code>K_init</code>.  The Delegate conveys the public JWK or thumbprint for <code>K_del</code> to the Initiator over the authenticated, integrity-protected mechanism defined by the deployment profile.  The Initiator verifies that the key belongs to the intended Delegate and signs a PRA with <code>K_init</code>.  The PRA binds the exact ID Token to <code>K_del</code>, names the IdP as the authorization server, limits the result to <code>https://gateway.example</code>, and expires after five minutes.  The Initiator conveys the exact encoded ID Token and PRA to the Delegate.<a href="#appendix-A-2" class="pilcrow">¶</a></p>
+<p id="appendix-A-3">The Delegate performs Token Exchange at the IdP:<a href="#appendix-A-3" class="pilcrow">¶</a></p>
+<div class="alignLeft art-text artwork" id="appendix-A-4">
+<pre>
+POST /token HTTP/1.1
+Host: idp.example
+Content-Type: application/x-www-form-urlencoded
+DPoP: &lt;proof of possession of K_del&gt;
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&amp;subject_token=&lt;key-bound Initiator ID Token&gt;
+&amp;subject_token_type=urn:ietf:params:oauth:token-type:id_token
+&amp;actor_token=&lt;Delegate actor token&gt;
+&amp;actor_token_type=urn:ietf:params:oauth:token-type:jwt
+&amp;audience=https://gateway.example
+&amp;presenter_rebinding=&lt;PRA signed by K_init for K_del&gt;
+&amp;client_assertion_type=&lt;jwt-bearer-client-assertion-type&gt;
+&amp;client_assertion=&lt;Delegate client assertion&gt;
+</pre><a href="#appendix-A-4" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A-5">The IdP validates the ID Token under the composed profile, reduces its <code>cnf</code> to <code>jkt(K_init)</code>, confirms that the PRA is signed by <code>K_init</code>, verifies the Source Token hash and IdP audience, checks the audience against <code>presenter_limits</code>, and verifies the Delegate's DPoP proof of <code>K_del</code>.  It separately authenticates the Delegate as client and actor, validates the administered cross-client relationship and <code>may_act</code> when present, and applies exchange-time policy.<a href="#appendix-A-5" class="pilcrow">¶</a></p>
+<p id="appendix-A-6">The single <code>K_del</code> proof serves both roles required by <a href="#te-request" class="auto internal xref">Section 7.1</a>: it satisfies the PRA <code>cnf.jkt</code> and it sender-constrains the token the IdP issues.  Note that the Delegate authenticates as a client with a separate client assertion, so client authentication remains independent of key control.<a href="#appendix-A-6" class="pilcrow">¶</a></p>
+<p id="appendix-A-7">On success, the IdP issues a token sender-constrained to <code>K_del</code>.  The applicable profile can authorize it to record the Delegate as the current actor and the Initiator as a prior actor:<a href="#appendix-A-7" class="pilcrow">¶</a></p>
+<div class="lang-json sourcecode" id="appendix-A-8">
+<pre>
+{
+  "iss": "https://idp.example",
+  "sub": "&lt;user identifier for the gateway&gt;",
+  "aud": "https://gateway.example",
+  "cnf": { "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I" },
+  "act": {
+    "iss": "https://idp.example",
+    "sub": "delegate-client",
+    "act": {
+      "iss": "https://idp.example",
+      "sub": "initiator-client"
+    }
+  }
+}
+</pre><a href="#appendix-A-8" class="pilcrow">¶</a>
+</div>
+<p id="appendix-A-9">An attacker that captures the Initiator's ID Token and PRA cannot perform the exchange without <code>K_del</code>.  If the Delegate later hands authority to another presenter, it uses the newly issued <code>K_del</code>-bound token as the Source Token in a new exchange; it does not extend the original PRA.<a href="#appendix-A-9" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="acknowledgments">
+<section id="appendix-B">
+      <h2 id="name-acknowledgments">
+<a href="#name-acknowledgments" class="section-name selfRef">Acknowledgments</a>
+      </h2>
+<p id="appendix-B-1">This mechanism addresses the presenter-transition needs of OAuth delegation profiles while keeping key handoff separate from actor identity and authorization policy.  It is designed to compose with OpenID Connect Key Binding <span>[<a href="#OpenID.KeyBinding" class="cite xref">OpenID.KeyBinding</a>]</span>, DPoP <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span>, OAuth 2.0 Token Exchange <span>[<a href="#RFC8693" class="cite xref">RFC8693</a>]</span>, the OAuth Actor Profile <span>[<a href="#I-D.mcguinness-oauth-actor-profile" class="cite xref">I-D.mcguinness-oauth-actor-profile</a>]</span>, and the Cross-Client Delegation profile <span>[<a href="#I-D.mcguinness-oauth-cross-client-delegation" class="cite xref">I-D.mcguinness-oauth-cross-client-delegation</a>]</span>.<a href="#appendix-B-1" class="pilcrow">¶</a></p>
+</section>
+</div>
+<div id="document-history">
+<section id="appendix-C">
+      <h2 id="name-document-history">
+<a href="#name-document-history" class="section-name selfRef">Document History</a>
+      </h2>
+<p id="appendix-C-1">[[ To be removed from the final specification ]]<a href="#appendix-C-1" class="pilcrow">¶</a></p>
+<p id="appendix-C-2">-01<a href="#appendix-C-2" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="appendix-C-3.1">
+          <p id="appendix-C-3.1.1">Recast the mechanism as one-hop presenter rebinding for JWT Source Tokens used with Token Exchange and DPoP.  Removed offline delegation chains, nested PDAs, recursive validation, cycle and size processing, and generic multi-hop attenuation.  Replaced the PDA with a smaller PRA, removed redundant key-derived <code>iss</code> and mandatory <code>jti</code>, and limited optional Presenter Limits to Token Exchange audience, resource, and scope.  Subsequent presenter transitions now require authorization-server-mediated exchange and reissuance.<a href="#appendix-C-3.1.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.2">
+          <p id="appendix-C-3.2.1">Renamed the document to <code>draft-mcguinness-oauth-presenter-rebinding</code> to match the recast mechanism.<a href="#appendix-C-3.2.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.3">
+          <p id="appendix-C-3.3.1">Stated that the Recipient Presenter key is the key proven by the request's single DPoP proof, since <span>[<a href="#RFC9449" class="cite xref">RFC9449</a>]</span> permits only one such proof and it also sender-constrains the issued token.  Raised issued-token sender-constraining to a requirement and prohibited issuing a bearer token from a presenter-rebinding exchange.<a href="#appendix-C-3.3.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.4">
+          <p id="appendix-C-3.4.1">Made same-request processing of the Source Token, PRA, DPoP proof, and Token Exchange parameters a normative validation step rather than only a security consideration.<a href="#appendix-C-3.4.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.5">
+          <p id="appendix-C-3.5.1">Added <code>presenter_rebinding_signing_alg_values_supported</code> authorization server metadata, so accepted PRA signing algorithms are discoverable.<a href="#appendix-C-3.5.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.6">
+          <p id="appendix-C-3.6.1">Defined <code>presenter_limits.resource</code> containment as simple string comparison against RFC 8707 resource indicators, with no prefix or wildcard relationship, and required rejection when containment cannot be determined.<a href="#appendix-C-3.6.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.7">
+          <p id="appendix-C-3.7.1">Required the PRA signing key to be resolved only from the <code>jwk</code> header parameter, prohibiting <code>jku</code> and <code>x5u</code> dereferencing and <code>x5c</code> and <code>kid</code> resolution.<a href="#appendix-C-3.7.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.8">
+          <p id="appendix-C-3.8.1">Restricted PRA <code>cnf</code> to a single <code>jkt</code> member, aligned the <code>sth</code> definition in the validation steps with its definition and the IANA entry, and cited the DPoP <code>ath</code> claim as the construction precedent.<a href="#appendix-C-3.8.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.9">
+          <p id="appendix-C-3.9.1">Noted that Presenter Limits bound one exchange rather than the total authorization obtainable from one PRA during its lifetime.<a href="#appendix-C-3.9.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.10">
+          <p id="appendix-C-3.10.1">Replaced the "Verifier" term with "authorization server" throughout, since the two were defined as the same entity, and cited RFC 6838 and RFC 7515 Section 4.1.9 in the media type registration.<a href="#appendix-C-3.10.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.11">
+          <p id="appendix-C-3.11.1">Limited the constant-size claim to the PRA proof path and stated that actor history is not bounded by it, requiring a profile that authorizes actor recording to specify <code>act</code> depth and cycle limits.<a href="#appendix-C-3.11.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.12">
+          <p id="appendix-C-3.12.1">Restated the requirements on a consuming profile as an explicit list, added the opt-in and actor-recording items, and marked the Cross-Client Delegation sketch illustrative so that the consuming profile's own composition section governs.<a href="#appendix-C-3.12.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.13">
+          <p id="appendix-C-3.13.1">Noted that a profile whose base carries <code>authorization_details</code> loses an upper bound on that dimension when composing with this document.<a href="#appendix-C-3.13.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.14">
+          <p id="appendix-C-3.14.1">Restored the general motivation, naming presenter transition under the actor profile and any Token Exchange whose requester differs from the party the key-bound subject token is bound to, alongside cross-client delegation.<a href="#appendix-C-3.14.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.15">
+          <p id="appendix-C-3.15.1">Added an Extensibility section stating what an extension may add and the six invariants it <span class="bcp14">MUST</span> preserve, and noted that use outside Token Exchange is outside this document's scope rather than reserved against a future binding.<a href="#appendix-C-3.15.1" class="pilcrow">¶</a></p>
+</li>
+        <li class="normal" id="appendix-C-3.16">
+          <p id="appendix-C-3.16.1">Requested a "Presenter Limits Members" registry so that independent extensions cannot collide on a member name, with a Specification Required procedure and expert instructions requiring fail-closed containment.<a href="#appendix-C-3.16.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+<p id="appendix-C-4">-00<a href="#appendix-C-4" class="pilcrow">¶</a></p>
+<ul class="normal">
+<li class="normal" id="appendix-C-5.1">
+          <p id="appendix-C-5.1.1">Initial revision.  Defined Presenter Delegation Assertions, delegation chains, attenuation, Token Exchange integration, and composition with delegation profiles.<a href="#appendix-C-5.1.1" class="pilcrow">¶</a></p>
+</li>
+      </ul>
+</section>
+</div>
+<div id="authors-addresses">
+<section id="appendix-D">
+      <h2 id="name-authors-address">
+<a href="#name-authors-address" class="section-name selfRef">Author's Address</a>
+      </h2>
+<address class="vcard">
+        <div dir="auto" class="left"><span class="fn nameRole">Karl McGuinness</span></div>
+<div dir="auto" class="left"><span class="org">Independent</span></div>
+<div class="email">
+<span>Email:</span>
+<a href="mailto:public@karlmcguinness.com" class="email">public@karlmcguinness.com</a>
+</div>
+</address>
+</section>
+</div>
+<script>const toc = document.getElementById("toc");
+toc.querySelector("h2").addEventListener("click", e => {
+  toc.classList.toggle("active");
+});
+toc.querySelector("nav").addEventListener("click", e => {
+  toc.classList.remove("active");
+});
+</script>
+</body>
+</html>
