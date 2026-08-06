@@ -16,8 +16,8 @@
 /node_modules/
 Gemfile.lock
 archive.json
-draft-mcguinness-oauth-presenter-delegation.txt
-draft-mcguinness-oauth-presenter-delegation.xml
+draft-mcguinness-oauth-presenter-rebinding.txt
+draft-mcguinness-oauth-presenter-rebinding.xml
 package-lock.json
 report.xml
 !requirements.txt
