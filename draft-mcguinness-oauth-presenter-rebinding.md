@@ -90,7 +90,15 @@ A proof-of-possession (PoP) token can normally be presented only by a party that
 
 Proof-of-possession (PoP) binding transforms a bearer security token into one that only its intended holder can use.  A JWT can carry a confirmation (`cnf`) claim {{RFC7800}} identifying a key, and the presenter proves possession of that key when using the token.  OpenID Connect Key Binding {{OpenID.KeyBinding}} applies this model to ID Tokens, and JWT access tokens {{RFC9068}} and Token Exchange {{RFC8693}} outputs can carry `cnf` as well.
 
-PoP binding creates a gap when a party is authorized to hand a token to another party for presentation.  For example, in cross-client delegation {{I-D.mcguinness-oauth-cross-client-delegation}}, a Delegate presents an Identity Assertion issued to and key-bound to an Initiator.  The Delegate does not hold the Initiator's key.  Removing the binding turns the token into a replayable bearer credential, while sharing the private key defeats key isolation and is often impossible.
+PoP binding creates a gap whenever the party that should present a token is not the party the token is bound to.  This arises in more than one place:
+
+*  In cross-client delegation {{I-D.mcguinness-oauth-cross-client-delegation}}, a Delegate presents an Identity Assertion issued to and key-bound to an Initiator.  The Delegate does not hold the Initiator's key.
+
+*  In presenter-transition and rebind flows under the OAuth Actor Profile {{I-D.mcguinness-oauth-actor-profile}}, a token bound to one presenter has to be continued by another.
+
+*  More generally, any Token Exchange in which the requesting party differs from the party a key-bound `subject_token` is bound to faces the same gap, whatever profile governs the exchange.
+
+Two unsatisfactory options are common today.  Removing the binding turns the token into a replayable bearer credential and discards the protection PoP binding provides.  Sharing the confirmation private key defeats key isolation and is often impossible.  This document defines a third option that requires neither.
 
 This document defines a one-hop cryptographic authorization for changing the presenter.  The holder of the Source Token's confirmation key signs a **Presenter Rebinding Assertion (PRA)** that binds together the exact Source Token, a recipient key, and one authorization server.  The recipient submits the Source Token and PRA in a Token Exchange request and proves possession of the recipient key with DPoP {{RFC9449}}.  The authorization server validates both signatures and applies all ordinary Token Exchange, client, actor, and deployment policy before issuing a token bound to the recipient key.
 
@@ -182,7 +190,7 @@ A PRA MUST contain:
 
 *  `sth` (Source Token hash): the base64url encoding without padding of the SHA-256 digest of the ASCII octets of the exact encoded Source Token value.  This is the construction used by the DPoP `ath` claim ({{RFC9449, Section 4.2}}), applied to the Source Token.  The value is computed before transport encoding.  For Token Exchange, it is computed over the `subject_token` value before `application/x-www-form-urlencoded` encoding, and the authorization server computes it after form decoding.  It MUST NOT be computed over decoded claims, reserialized JSON, or a canonicalized representation.
 
-*  `cnf`: the Recipient Presenter key.  It MUST be a JSON object containing a single member, `jkt`, whose value is the JWK SHA-256 Thumbprint {{RFC7638}} of the recipient's asymmetric DPoP public key.  An authorization server MUST reject a PRA whose `cnf` contains any other member.
+*  `cnf`: the Recipient Presenter key.  It MUST be a JSON object containing a single member, `jkt`, whose value is the JWK SHA-256 Thumbprint {{RFC7638}} of the recipient's asymmetric DPoP public key.  An authorization server MUST reject a PRA whose `cnf` contains any other member.  This specification defines only `jkt`, because DPoP is the only proof mechanism it defines; an extension introducing another confirmation method MUST specify the corresponding proof mechanism and MUST preserve the requirement that `cnf` identify exactly one asymmetric key ({{extensibility}}).
 
 *  `aud`: the authorization server issuer identifier.  Its value MUST be one case-sensitive string, not an array.  The value MUST exactly equal the issuer identifier by which the authorization server identifies itself.  It is distinct from the Token Exchange `audience` request parameter and the DPoP `htu` claim.
 
@@ -194,7 +202,7 @@ A PRA MAY contain:
 
 *  `jti`: an identifier for audit, profile-defined one-time use, or profile-defined revocation.  Reuse of a PRA `jti` is not by itself a replay because a PRA authorizes a key and can be used more than once during its validity interval unless a profile says otherwise.
 
-*  `presenter_limits`: a JSON object restricting the Token Exchange result as specified in {{limits}}.  Its defined members are `audience`, `resource`, and `scope`.  An authorization server MUST reject an unknown member unless an applicable extension defines it.
+*  `presenter_limits`: a JSON object restricting the Token Exchange result as specified in {{limits}}.  Its defined members are `audience`, `resource`, and `scope`.  An authorization server MUST reject a member it does not recognize; recognized members are those registered per {{iana-limits}} and supported by the authorization server.
 
 Other claims MUST NOT be interpreted as identifying the Original Presenter or granting authority unless an applicable profile explicitly defines that meaning and its validation rules.
 
@@ -249,7 +257,7 @@ When a member is absent, the PRA places no restriction on that dimension.  Defau
 
 The authorization server MAY issue a result narrower than both the request and the Presenter Limits.  It MUST NOT issue a result broader than either.
 
-This specification does not define limits for `authorization_details`; a profile that needs such limits must define type-specific containment rules in an extension.  A profile whose base already carries `authorization_details` through Token Exchange therefore loses an upper bound on that dimension when it composes with this document, and needs such an extension to restore it.  {{security-limits}} states the requirements an extension must meet.
+This specification does not define limits for `authorization_details`; a profile that needs such limits must define type-specific containment rules in an extension and register the member per {{iana-limits}}.  A profile whose base already carries `authorization_details` through Token Exchange therefore loses an upper bound on that dimension when it composes with this document, and needs such an extension to restore it.  {{security-limits}} states the requirements an extension must meet.
 
 
 # Presentation and Validation {#validation}
@@ -338,6 +346,33 @@ The Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegati
 *  the Delegate controls the Recipient Presenter key, submits the exchange, and proves possession with DPoP;
 *  the IdP is the authorization server; and
 *  the PRA is conjunctive with the administered cross-client relationship, `may_act` when present, Delegate client and actor authentication, and exchange-time policy.
+
+
+# Extensibility {#extensibility}
+
+This document defines one artifact, one proof mechanism, and one binding of that artifact to a protocol exchange.  Each is an extension point.  This section states what an extension may add and what it MUST NOT change, so that additional profiles and use cases can compose without renegotiating the security model.
+
+An extension MAY:
+
+*  define an additional `presenter_limits` member, subject to {{iana-limits}} and to the containment requirements in {{security-limits}};
+
+*  define an additional PRA confirmation method for `cnf`, together with the proof mechanism by which a Recipient Presenter demonstrates control of the identified key; or
+
+*  define an additional binding of the PRA to a protocol exchange other than the Token Exchange binding in {{token-exchange}}.  Such a binding MUST specify the value that `aud` carries for that exchange, how the PRA is transported, how the Recipient Presenter proves possession on the same request, and how the result of a successful presentation is constrained.  {{scope}} places use outside Token Exchange outside the scope of this document; it does not reserve it against a specification that supplies those definitions.
+
+An extension MUST preserve each of the following invariants.  An extension that changes any of them is a different protocol and requires its own validation, revocation, privacy, and resource-exhaustion analysis:
+
+1. **One hop.**  A PRA authorizes one presenter transition.  A PRA MUST NOT be nested, chained, or interpreted as authorizing another PRA ({{security-transitions}}).
+
+2. **One verifier.**  A PRA names exactly one verifier in `aud`, as one case-sensitive string, and is valid only there.
+
+3. **Exact token binding.**  A PRA authorizes presentation of the one Source Token whose encoded octets `sth` covers, and of no other token.
+
+4. **No presenter-chosen signing key.**  The PRA signing key is determined by the validated Source Token's `cnf` claim.  A Recipient Presenter MUST NOT be able to influence which key verifies the PRA ({{key-identification}}).
+
+5. **One recipient key, proven on the request.**  A PRA identifies exactly one asymmetric recipient key, and control of that key is proven on the same request that carries the PRA.
+
+6. **Limits narrow only.**  Presenter Limits and any extension to them are upper bounds.  They never grant authority, and their omission is never permission ({{security-limits}}).
 
 
 # Security Considerations {#security}
@@ -449,6 +484,20 @@ and:
 *  Claim Description: Upper bounds on authorization resulting from a presenter-rebound Token Exchange
 *  Change Controller: IESG
 *  Specification Document: {{pra-claims}} and {{limits}} of this document
+
+## Presenter Limits Members Registry {#iana-limits}
+
+This document requests creation of a new registry, "Presenter Limits Members", to hold the members defined for the `presenter_limits` claim ({{limits}}).  Without a registry, independent extensions can choose the same member name with no arbiter, and {{pra-claims}} requires an authorization server to reject an unrecognized member, so a collision fails closed but is not detectable at registration time.
+
+The registration procedure is Specification Required.  The designated expert is directed to confirm that a proposed member specifies a containment rule that compares a requested value and the corresponding authorization in the issued token, that the rule can be evaluated by simple comparison or is otherwise fully specified, and that it fails closed when containment cannot be determined, as required by {{security-limits}}.  A member that can broaden the result of an exchange MUST NOT be registered.
+
+Each registration contains a Member Name, a Description, a Change Controller, and a Specification Document.  The initial contents are the three members defined by this document:
+
+*  Member Name: `audience`; Description: Upper bound on Token Exchange target audiences; Change Controller: IESG; Specification Document: {{limits}} of this document
+
+*  Member Name: `resource`; Description: Upper bound on resource indicators; Change Controller: IESG; Specification Document: {{limits}} of this document
+
+*  Member Name: `scope`; Description: Upper bound on granted scope values; Change Controller: IESG; Specification Document: {{limits}} of this document
 
 ## OAuth Parameters Registration {#iana-parameter}
 
@@ -567,6 +616,12 @@ This mechanism addresses the presenter-transition needs of OAuth delegation prof
 * Restated the requirements on a consuming profile as an explicit list, added the opt-in and actor-recording items, and marked the Cross-Client Delegation sketch illustrative so that the consuming profile's own composition section governs.
 
 * Noted that a profile whose base carries `authorization_details` loses an upper bound on that dimension when composing with this document.
+
+* Restored the general motivation, naming presenter transition under the actor profile and any Token Exchange whose requester differs from the party the key-bound subject token is bound to, alongside cross-client delegation.
+
+* Added an Extensibility section stating what an extension may add and the six invariants it MUST preserve, and noted that use outside Token Exchange is outside this document's scope rather than reserved against a future binding.
+
+* Requested a "Presenter Limits Members" registry so that independent extensions cannot collide on a member name, with a Specification Required procedure and expert instructions requiring fail-closed containment.
 
 -00
 
