@@ -608,44 +608,6 @@ This mechanism addresses the presenter-transition needs of OAuth delegation prof
 
 \[\[ To be removed from the final specification ]]
 
--01
-
-* Recast the mechanism as one-hop presenter rebinding for JWT Source Tokens used with Token Exchange and DPoP.  Removed offline delegation chains, nested PDAs, recursive validation, cycle and size processing, and generic multi-hop attenuation.  Replaced the PDA with a smaller PRA, removed redundant key-derived `iss` and mandatory `jti`, and limited optional Presenter Limits to Token Exchange audience, resource, and scope.  Subsequent presenter transitions now require authorization-server-mediated exchange and reissuance.
-
-* Renamed the document to `draft-mcguinness-oauth-presenter-rebinding` to match the recast mechanism.
-
-* Stated that the Recipient Presenter key is the key proven by the request's single DPoP proof, since {{RFC9449}} permits only one such proof and it also sender-constrains the issued token.  Raised issued-token sender-constraining to a requirement and prohibited issuing a bearer token from a presenter-rebinding exchange.
-
-* Made same-request processing of the Source Token, PRA, DPoP proof, and Token Exchange parameters a normative validation step rather than only a security consideration.
-
-* Added `presenter_rebinding_signing_alg_values_supported` authorization server metadata, so accepted PRA signing algorithms are discoverable.
-
-* Defined `presenter_limits.resource` containment as simple string comparison against RFC 8707 resource indicators, with no prefix or wildcard relationship, and required rejection when containment cannot be determined.
-
-* Required the PRA signing key to be resolved only from the `jwk` header parameter, prohibiting `jku` and `x5u` dereferencing and `x5c` and `kid` resolution.
-
-* Restricted PRA `cnf` to a single `jkt` member, aligned the `sth` definition in the validation steps with its definition and the IANA entry, and cited the DPoP `ath` claim as the construction precedent.
-
-* Noted that Presenter Limits bound one exchange rather than the total authorization obtainable from one PRA during its lifetime.
-
-* Replaced the "Verifier" term with "authorization server" throughout, since the two were defined as the same entity, and cited RFC 6838 and RFC 7515 Section 4.1.9 in the media type registration.
-
-* Limited the constant-size claim to the PRA proof path and stated that actor history is not bounded by it, requiring a profile that authorizes actor recording to specify `act` depth and cycle limits.
-
-* Restated the requirements on a consuming profile as an explicit list, added the opt-in and actor-recording items, and marked the Cross-Client Delegation sketch illustrative so that the consuming profile's own composition section governs.
-
-* Noted that a profile whose base carries `authorization_details` loses an upper bound on that dimension when composing with this document.
-
-* Restored the general motivation, naming presenter transition under the actor profile and any Token Exchange whose requester differs from the party the key-bound subject token is bound to, alongside cross-client delegation.
-
-* Added an Extensibility section stating what an extension may add and the six invariants it MUST preserve, and noted that use outside Token Exchange is outside this document's scope rather than reserved against a future binding.
-
-* Requested a "Presenter Limits Members" registry so that independent extensions cannot collide on a member name, with a Specification Required procedure and expert instructions requiring fail-closed containment.
-
-* Editorial and structural pass.  Made Presenter Limits a subsection of the Presenter Rebinding Assertion section rather than a peer of it, recast the Extensibility invariants as a summary of requirements stated elsewhere rather than a second normative statement of them, replaced the restated `sth` construction in the validation steps with a reference to its definition, trimmed the Protocol Model text that duplicated the Token Exchange request rules, turned the error conditions into a list, moved registry rationale out of the IANA section, split two overlong paragraphs, and used "Recipient Presenter" consistently after the terminology section.
-
-* Required the Token Exchange request to carry a parameter for every dimension the PRA limits, replacing the rule that constrained authorization-server defaults.  With the request explicit and the issued authorization never exceeding the request, an authorization server can confine the issued token by comparing the request against the limit at one point, and Presenter Limits became an input to the authorization computation rather than a check on the finished token.
-
 -00
 
-* Initial revision.  Defined Presenter Delegation Assertions, delegation chains, attenuation, Token Exchange integration, and composition with delegation profiles.
+* Initial revision.
