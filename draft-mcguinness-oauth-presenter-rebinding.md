@@ -82,7 +82,7 @@ informative:
 
 --- abstract
 
-A proof-of-possession (PoP) token can normally be presented only by a party that holds the token's confirmation key.  This prevents an intended recipient from presenting the token when a token handoff is authorized but transferring the confirmation private key is unacceptable.  This document defines a one-hop presenter-rebinding mechanism for OAuth 2.0 Token Exchange.  The holder of a JWT Source Token's confirmation key signs a Presenter Rebinding Assertion (PRA) that authorizes a recipient key to present that exact token at a named authorization server.  The recipient presents the Source Token and PRA with a DPoP proof of its own key.  After applying normal authorization policy, the authorization server can issue a new token bound to the recipient key.  Further presenter changes use another exchange rather than an offline delegation chain.
+A proof-of-possession (PoP) token can normally be presented only by a party that holds the token's confirmation key.  This prevents an intended recipient from presenting the token when a token handoff is authorized but transferring the confirmation private key is unacceptable.  This document defines a one-hop presenter-rebinding mechanism for OAuth 2.0 Token Exchange.  The holder of a JWT Source Token's confirmation key signs a Presenter Rebinding Assertion (PRA) that authorizes a recipient key to present that exact token at a named authorization server.  The recipient presents the Source Token and PRA with a DPoP proof of its own key.  After applying normal authorization policy, the authorization server issues an access token sender-constrained to the recipient key, and no refresh token.  Further presenter changes use another exchange rather than an offline delegation chain.
 
 
 --- middle
@@ -298,6 +298,8 @@ The authorization server MUST perform the following checks.  Failure of any requ
 
 6. Validate the Token Exchange request, client and actor authentication, delegation relationship, and requested authorization under {{RFC8693}}, the applicable profile, and local policy.  Confirm that the request carries a parameter for every dimension the PRA limits, and apply Presenter Limits per {{limits}} to those request values and to the resulting authorization.
 
+Step 2 validates the Source Token under the token type the requester declared, because the PRA is not parsed until step 3.  Step 4 then confirms that the Original Presenter authorized that type.  A request whose `subject_token_type` does not equal `stt` therefore fails at step 4 even though the Source Token validated under the declared type, and the exchange is not authorized.
+
 On success, the Source Token's proof-of-possession requirement for this Token Exchange presentation is satisfied by the holder of the PRA Recipient Presenter key.  This result establishes control of an authorized presentation key.  It does not establish the presenter's application-level identity or independently authorize the exchange.
 
 
@@ -320,7 +322,7 @@ This constrains only key control on this request.  It does not merge the Recipie
 
 The authorization server validates the request according to {{validation}}.  If it issues a token, the authorization carried by that token MUST be within both normal authorization policy and any Presenter Limits.
 
-The token issued by a presenter-rebinding exchange MUST be an OAuth 2.0 access token, and the response MUST carry `token_type` of `DPoP` as specified in {{RFC9449, Section 5}}.  {{RFC8693}} permits other issued token types, and {{RFC9449}} defines an interoperable sender-constrained output only for access tokens; this document therefore defines the base case only.  An authorization server MUST reject a request whose `requested_token_type` it would satisfy with any other token type, unless an applicable profile defines how the Recipient Presenter key binding is represented in that token type and how a verifier checks it.
+The token issued by a presenter-rebinding exchange MUST be an OAuth 2.0 access token, and the response MUST carry `token_type` of `DPoP` as specified in {{RFC9449, Section 5}}.  {{RFC8693}} permits other issued token types, and {{RFC9449}} defines an interoperable sender-constrained output only for access tokens; this document therefore defines the base case only.  An authorization server MUST reject a request whose `requested_token_type` it would satisfy with any other token type, unless an applicable profile defines how the Recipient Presenter key binding is represented in that token type and how a verifier checks it.  {{RFC8693}} makes `requested_token_type` OPTIONAL and leaves the default to the authorization server; when it is absent from a presenter-rebinding request, the authorization server MUST treat the request as one for an access token.
 
 The authorization server MUST sender-constrain that access token to the PRA Recipient Presenter key.  Because that key is also the key proven by the request's DPoP proof ({{te-request}}), this is the binding ordinary DPoP token-endpoint processing produces for an access token.  Sender-constraining completes the presenter transition: the issued token has one current confirmation key, and a subsequent transition requires a new PRA signed by that key over the new token.
 
@@ -348,6 +350,8 @@ Errors are returned according to {{RFC8693, Section 2.2.2}} and {{RFC6749, Secti
 | `requested_token_type` the authorization server will not sender-constrain ({{te-processing}}) | `invalid_request` |
 
 Error descriptions SHOULD NOT disclose which key, relationship, or policy input caused rejection.
+
+The error codes themselves can also disclose.  `invalid_target` is returned only for a request that could otherwise have succeeded, so distinguishing it from `invalid_request` tells the requester that the presented tokens and the underlying relationship were acceptable.  An applicable profile MAY therefore require an authorization server to return `invalid_request` in place of `invalid_target` where that distinction would disclose the existence of an administered relationship or other confidential policy state.  A profile doing so accepts reduced target diagnostics in exchange for non-disclosure.  The table above applies where no such requirement is in force.
 
 ## Authorization Server Metadata {#metadata}
 
@@ -399,7 +403,7 @@ Any such specification MUST preserve each of the following invariants.  A specif
 
 2. **One authorization server.**  A PRA names exactly one authorization server in `aud`, as one case-sensitive string, and is valid only there ({{pra-claims}}).
 
-3. **Exact token binding.**  A PRA authorizes presentation of the one Source Token whose encoded octets `sth` covers, and of no other token ({{pra-claims}}).
+3. **Exact token binding.**  A PRA authorizes presentation of the one Source Token whose encoded octets `sth` covers, read under the one token type `stt` names, and of no other token and no other type ({{pra-claims}}).
 
 4. **No presenter-chosen signing key.**  The PRA signing key is determined by the validated Source Token's `cnf` claim, and a Recipient Presenter cannot influence which key verifies the PRA ({{key-identification}}).
 
