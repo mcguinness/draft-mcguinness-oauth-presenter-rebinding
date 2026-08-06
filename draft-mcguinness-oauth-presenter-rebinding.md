@@ -43,6 +43,7 @@ normative:
   RFC8414:
   RFC8693:
   RFC8707:
+  RFC8126:
   RFC8725:
   RFC9449:
 
@@ -114,7 +115,7 @@ This specification applies to a Source Token that:
 *  is accepted as a `subject_token` in OAuth 2.0 Token Exchange; and
 *  carries an RFC 7800 `cnf` claim that resolves to exactly one asymmetric signing key as specified in {{key-identification}}.
 
-The recipient proves possession with DPoP, and the recipient key is the key proven by the request's single DPoP proof, as specified in {{te-request}}.  Symmetric confirmation keys, bearer Source Tokens, non-JWT Source Tokens, mutual-TLS presenter rebinding, use outside Token Exchange, and offline multi-hop delegation are out of scope.  A future specification can define another profile without changing the one-hop security invariant defined here.
+The recipient proves possession with DPoP, and the recipient key is the key proven by the request's single DPoP proof, as specified in {{te-request}}.  The exchange issues a DPoP-bound OAuth access token, as specified in {{te-processing}}.  Symmetric confirmation keys, bearer Source Tokens, non-JWT Source Tokens, mutual-TLS presenter rebinding, issued token types other than an access token, refresh tokens, use outside Token Exchange, and offline multi-hop delegation are out of scope.  A future specification can define another profile without changing the one-hop security invariant defined here.
 
 This document changes nothing for direct presentation.  A party that holds the Source Token's confirmation key presents the token under its existing profile and does not use a PRA.
 
@@ -190,21 +191,34 @@ A PRA MUST contain:
 
 *  `sth` (Source Token hash): the base64url encoding without padding of the SHA-256 digest of the ASCII octets of the exact encoded Source Token value.  This is the construction used by the DPoP `ath` claim ({{RFC9449, Section 4.2}}), applied to the Source Token.  The value is computed before transport encoding.  For Token Exchange, it is computed over the `subject_token` value before `application/x-www-form-urlencoded` encoding, and the authorization server computes it after form decoding.  It MUST NOT be computed over decoded claims, reserialized JSON, or a canonicalized representation.
 
-*  `cnf`: the Recipient Presenter key.  It MUST be a JSON object containing a single member, `jkt`, whose value is the JWK SHA-256 Thumbprint {{RFC7638}} of the Recipient Presenter's asymmetric DPoP public key.  An authorization server MUST reject a PRA whose `cnf` contains any other member.  This specification defines only `jkt`, because DPoP is the only proof mechanism it defines; an extension introducing another confirmation method MUST specify the corresponding proof mechanism and MUST preserve the requirement that `cnf` identify exactly one asymmetric key ({{extensibility}}).
+*  `stt` (Source Token type): the token type identifier the Recipient Presenter will send as `subject_token_type`.  Its value MUST be one case-sensitive string.  `sth` binds the Source Token's octets but not the profile under which they are interpreted, and one JWT can be acceptable under more than one token type identifier.  Without `stt` a Recipient Presenter could present the authorized token under a token type the Original Presenter did not intend, and have it validated under different rules.  This is carried as a claim rather than folded into the `sth` digest so that it remains independently inspectable and `sth` remains the construction defined by {{RFC9449, Section 4.2}}.
+
+*  `cnf`: the Recipient Presenter key.  It MUST be a JSON object containing a single member, `jkt`, whose value is the JWK SHA-256 Thumbprint {{RFC7638}} of the Recipient Presenter's asymmetric DPoP public key.  An authorization server MUST reject a PRA whose `cnf` contains any other member.
 
 *  `aud`: the authorization server issuer identifier.  Its value MUST be one case-sensitive string, not an array.  The value MUST exactly equal the issuer identifier by which the authorization server identifies itself.  It is distinct from the Token Exchange `audience` request parameter and the DPoP `htu` claim.
 
-*  `iat`: the time at which the PRA was issued.
+*  `iat`: the time at which the PRA was issued, as a NumericDate {{RFC7519}}.
 
-*  `exp`: the expiration time.  A PRA SHOULD be short-lived, and an authorization server MUST enforce a maximum PRA lifetime according to local policy.
+*  `exp`: the expiration time, as a NumericDate {{RFC7519}}.  A PRA SHOULD be short-lived.  `exp` bounds when the exchange may occur; it does not bound the lifetime of the token the exchange issues, as discussed in {{security-derived}}.
 
 A PRA MAY contain:
 
 *  `jti`: an identifier for audit, profile-defined one-time use, or profile-defined revocation.  Reuse of a PRA `jti` is not by itself a replay because a PRA authorizes a key and can be used more than once during its validity interval unless a profile says otherwise.
 
-*  `presenter_limits`: a JSON object restricting the Token Exchange result as specified in {{limits}}.  Its defined members are `audience`, `resource`, and `scope`.  An authorization server MUST reject a member it does not recognize; recognized members are those registered per {{iana-limits}} and supported by the authorization server.
+*  `presenter_limits`: a JSON object restricting the Token Exchange result as specified in {{limits}}.  Its defined members are `audience`, `resource`, and `scope`, all of which an authorization server supporting presenter rebinding MUST implement.  An authorization server MUST reject a PRA carrying any other member unless that member is registered per {{iana-limits}} and the authorization server implements it.
 
 Other claims MUST NOT be interpreted as identifying the Original Presenter or granting authority unless an applicable profile explicitly defines that meaning and its validation rules.
+
+An authorization server MUST configure a maximum PRA lifetime.  Writing `now` for its current time and `skew` for the clock skew it permits, it MUST reject a PRA unless all of the following hold:
+
+~~~text
+iat <= now + skew
+exp >  now - skew
+exp >  iat
+exp - iat <= maximum lifetime
+~~~
+
+Stating these comparisons explicitly avoids the interoperability differences that "satisfies temporal-validity policy" would otherwise leave to each implementation.
 
 ## Presenter Limits {#limits}
 
@@ -219,6 +233,8 @@ The object can contain:
 *  `scope`: a space-delimited set of scope values.  A requested or granted scope value is within this limit when it is a member of the set.
 
 When a member is absent, the PRA places no restriction on that dimension.
+
+Presenter Limits constrain each dimension independently, and the dimensions combine as {{RFC8693, Section 2.1.1}} specifies: "the requested access rights of the token are the Cartesian product of all the scopes at all the target services."  Presenter Limits are therefore a Cartesian-product ceiling.  A PRA carrying `audience` of `["service-a", "service-b"]` and `scope` of `read write` permits both scopes at both services; it cannot express write access at one service and read-only access at the other.  An Original Presenter that needs to correlate a scope with a particular audience or resource MUST sign a separate PRA for each correlated combination, each carrying only the values that belong together.  Signing one PRA with the union of the values it would have used across several is a broader authorization than it appears.
 
 When a member is present, the corresponding Token Exchange request parameter MUST be present in the request, and every value it carries MUST be within the limit.  An authorization server MUST reject a request that omits a parameter for which the PRA carries a limit.  Requiring the requester to state what it wants removes the case in which an authorization-server default, rather than the request, determines the result for a limited dimension.  A Recipient Presenter holds the PRA and can therefore read each limit it must request within.
 
@@ -250,6 +266,7 @@ The following abbreviated PRA authorizes `K_recipient` to present one Source Tok
 ~~~json
 {
   "sth": "0Ei...source-token-hash...",
+  "stt": "urn:ietf:params:oauth:token-type:id_token",
   "cnf": { "jkt": "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I" },
   "aud": "https://idp.example",
   "presenter_limits": {
@@ -275,7 +292,7 @@ The authorization server MUST perform the following checks.  Failure of any requ
 
 3. Parse the PRA without accepting duplicate JSON member names.  Confirm that the protected header contains `typ`, `alg`, and a public `jwk` as required by {{pra-header}}.  Compute the header key's JWK SHA-256 Thumbprint and confirm that it equals the expected Source Confirmation Key thumbprint.  Verify the PRA signature with that header key and accepted `alg`.
 
-4. Confirm that `sth` equals the value defined in {{pra-claims}}, computed over the `subject_token` parameter after form decoding, that `aud` exactly identifies the authorization server, and that `iat` and `exp` satisfy temporal-validity, clock-skew, and maximum-lifetime policy.  Apply `jti` replay or revocation state only when required by an applicable profile or local policy.
+4. Confirm that `sth` equals the value defined in {{pra-claims}}, computed over the `subject_token` parameter after form decoding, that `stt` exactly equals the request's `subject_token_type`, that `aud` exactly identifies the authorization server, and that `iat` and `exp` satisfy temporal-validity, clock-skew, and maximum-lifetime policy.  Apply `jti` replay or revocation state only when required by an applicable profile or local policy.
 
 5. Confirm that the PRA `cnf` contains only `jkt` and that its value is syntactically valid.  Validate the DPoP proof carried on this request according to {{RFC9449}}, including its signature, `typ`, `alg`, `jwk`, `jti`, `htm`, `htu`, `iat`, and nonce when required.  Confirm that the DPoP public key's JWK SHA-256 Thumbprint exactly equals the PRA `cnf.jkt`.
 
@@ -293,7 +310,7 @@ This specification defines the following Token Exchange parameter:
 `presenter_rebinding`:
 : The compact JWS serialization of one PRA rooted in the `subject_token`'s confirmation key.  It is REQUIRED when the requester uses this mechanism and MUST NOT occur more than once.
 
-The `subject_token` is the Source Token.  The PRA `aud` MUST be the authorization server's issuer identifier; it is not the token endpoint URI, the DPoP `htu`, or the requested token audience.
+The `subject_token` is the Source Token, and the request's `subject_token_type` MUST equal the PRA `stt` claim.  The PRA `aud` MUST be the authorization server's issuer identifier; it is not the token endpoint URI, the DPoP `htu`, or the requested token audience.
 
 The requester MUST send a DPoP proof on the same request, and the key proven by that DPoP proof MUST be the key identified by the PRA `cnf.jkt`.  {{RFC9449}} permits at most one DPoP proof per request, and at the token endpoint that proof also determines the key to which the authorization server sender-constrains the issued token.  A requester using this mechanism therefore uses the Recipient Presenter key as its DPoP key for this request; it cannot present one key as the Recipient Presenter and a different key for sender-constraining.  An authorization server MUST reject a request whose DPoP proof is for a key other than the PRA `cnf.jkt`.
 
@@ -303,25 +320,34 @@ This constrains only key control on this request.  It does not merge the Recipie
 
 The authorization server validates the request according to {{validation}}.  If it issues a token, the authorization carried by that token MUST be within both normal authorization policy and any Presenter Limits.
 
-The authorization server MUST sender-constrain the issued token to the PRA Recipient Presenter key.  Because that key is also the key proven by the request's DPoP proof ({{te-request}}), this is the binding ordinary DPoP token-endpoint processing already produces.  Sender-constraining completes the presenter transition: the issued token has one current confirmation key, and a subsequent transition requires a new PRA signed by that key over the new token.
+The token issued by a presenter-rebinding exchange MUST be an OAuth 2.0 access token, and the response MUST carry `token_type` of `DPoP` as specified in {{RFC9449, Section 5}}.  {{RFC8693}} permits other issued token types, and {{RFC9449}} defines an interoperable sender-constrained output only for access tokens; this document therefore defines the base case only.  An authorization server MUST reject a request whose `requested_token_type` it would satisfy with any other token type, unless an applicable profile defines how the Recipient Presenter key binding is represented in that token type and how a verifier checks it.
 
-An authorization server MUST NOT issue a bearer token in response to a request that uses presenter rebinding.  Doing so would convert a key-bound Source Token into an unbound credential and defeat both the Source Token's confirmation requirement and the one-hop invariant in {{security-transitions}}.  If the authorization server is unwilling to sender-constrain the requested token type, it MUST reject the request rather than issue an unbound token.
+The authorization server MUST sender-constrain that access token to the PRA Recipient Presenter key.  Because that key is also the key proven by the request's DPoP proof ({{te-request}}), this is the binding ordinary DPoP token-endpoint processing produces for an access token.  Sender-constraining completes the presenter transition: the issued token has one current confirmation key, and a subsequent transition requires a new PRA signed by that key over the new token.
+
+An authorization server MUST NOT issue a bearer token in response to a request that uses presenter rebinding.  Doing so would convert a key-bound Source Token into an unbound credential and defeat both the Source Token's confirmation requirement and the one-hop invariant in {{security-transitions}}.  If the authorization server is unwilling to sender-constrain the token it would issue, it MUST reject the request rather than issue an unbound token.
+
+An authorization server MUST NOT issue a refresh token in response to a request that uses presenter rebinding.  {{RFC9449, Section 5}} does not bind a refresh token issued to a confidential client to the DPoP proof public key, because such a refresh token is already sender-constrained by client authentication.  A Recipient Presenter that authenticates as a confidential client would therefore hold a credential derived from the Source Token that is controlled by its client credentials rather than by the Recipient Presenter key, and could obtain further tokens after the PRA expired without any presenter-key transition having been authorized; see {{security-derived}}.  A profile that needs refreshable output has to define how refresh preserves the key transition.
 
 An applicable delegation profile MAY allow the authorization server to record the Original Presenter as a prior actor in the issued token's `act` claim {{RFC8693}}.  It can do so only when the profile independently maps the Source Confirmation Key to an authenticated actor identity and authorizes that actor relationship.  A key thumbprint is not an actor identity, and a valid PRA alone is insufficient to create an `act` entry.
 
 ## Errors {#te-errors}
 
-Errors are returned according to {{RFC8693, Section 2.2.2}} and {{RFC6749, Section 5.2}}.  When presenter rebinding is required, each of the following uses the `invalid_request` error code:
+Errors are returned according to {{RFC8693, Section 2.2.2}} and {{RFC6749, Section 5.2}}.  A missing or invalid DPoP proof is a DPoP error, not a presenter-rebinding error, and takes the code {{RFC9449}} assigns it.  When presenter rebinding is required, the error codes are:
 
-*  a missing or invalid `presenter_rebinding` parameter, or more than one occurrence of it;
-*  PRA validation failure under {{validation}};
-*  DPoP validation failure;
-*  a DPoP proof for a key other than the PRA `cnf.jkt` ({{te-request}});
-*  a request that omits a Token Exchange parameter for which the PRA carries a limit ({{limits}});
-*  a request or resulting authorization outside Presenter Limits; and
-*  an inability to sender-constrain the requested token type ({{te-processing}}).
+| Condition | Error code |
+|---|---|
+| Missing, malformed, or otherwise invalid DPoP proof | `invalid_dpop_proof` ({{RFC9449, Section 5}}) |
+| DPoP nonce required or stale | `use_dpop_nonce`, per {{RFC9449, Section 8}} |
+| Valid DPoP proof whose key is not the PRA `cnf.jkt` | `invalid_request` |
+| Missing or invalid `presenter_rebinding`, or more than one occurrence | `invalid_request` |
+| PRA validation failure under {{validation}} | `invalid_request` |
+| `stt` not equal to `subject_token_type` | `invalid_request` |
+| Request omits a parameter for which the PRA carries a limit ({{limits}}) | `invalid_request` |
+| Requested `scope` or granted scope outside a `scope` limit | `invalid_request` |
+| Requested or issued `audience` or `resource` outside its limit | `invalid_target` |
+| `requested_token_type` the authorization server will not sender-constrain ({{te-processing}}) | `invalid_request` |
 
-An unacceptable `audience` or `resource` SHOULD instead use `invalid_target`, as specified by {{RFC8693}}.  DPoP-specific error processing follows {{RFC9449}}.  Error descriptions SHOULD NOT disclose which key, relationship, or policy input caused rejection.
+Error descriptions SHOULD NOT disclose which key, relationship, or policy input caused rejection.
 
 ## Authorization Server Metadata {#metadata}
 
@@ -363,21 +389,15 @@ The Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegati
 
 # Extensibility {#extensibility}
 
-This document defines one artifact, one proof mechanism, and one binding of that artifact to a protocol exchange.  Each is an extension point.  This section states what an extension may add and what it MUST NOT change, so that additional profiles and use cases can compose without renegotiating the security model.
+This document deliberately offers one extension point.  An extension MAY define an additional `presenter_limits` member, subject to {{iana-limits}} and to the containment requirements in {{security-limits}}.  Registration is what keeps independent extensions from choosing the same member name: a member the authorization server does not implement already fails closed under {{pra-claims}}, but without a registry a collision is not detectable at the time either extension is written.
 
-An extension MAY:
+Everything else about the mechanism is fixed by design.  The confirmation method is `jkt` and the proof mechanism is DPoP; `aud` is an authorization server issuer identifier; and the only binding is the Token Exchange binding of {{token-exchange}}.  A specification that changes any of these would have to override a normative requirement of this document, so it updates this document rather than extending it.  {{scope}} places those cases outside this document's scope; it does not reserve them against a future specification that takes them on deliberately.
 
-*  define an additional `presenter_limits` member, subject to {{iana-limits}} and to the containment requirements in {{security-limits}}.  Registration is what keeps independent extensions from choosing the same member name: an unrecognized member already fails closed under {{pra-claims}}, but without a registry a collision is not detectable at the time either extension is written;
-
-*  define an additional PRA confirmation method for `cnf`, together with the proof mechanism by which a Recipient Presenter demonstrates control of the identified key; or
-
-*  define an additional binding of the PRA to a protocol exchange other than the Token Exchange binding in {{token-exchange}}.  Such a binding MUST specify the value that `aud` carries for that exchange, how the PRA is transported, how the Recipient Presenter proves possession on the same request, and how the result of a successful presentation is constrained.  {{scope}} places use outside Token Exchange outside the scope of this document; it does not reserve it against a specification that supplies those definitions.
-
-An extension MUST preserve each of the following invariants.  An extension that changes any of them is a different protocol and requires its own validation, revocation, privacy, and resource-exhaustion analysis.  Each invariant is stated normatively in the section referenced beside it; the list below summarizes those requirements and does not restate them, and the referenced section governs.
+Any such specification MUST preserve each of the following invariants.  A specification that changes one of them is a different protocol and requires its own validation, revocation, privacy, and resource-exhaustion analysis.  Each invariant is stated normatively in the section referenced beside it; the list below summarizes those requirements and does not restate them, and the referenced section governs.
 
 1. **One hop.**  A PRA authorizes one presenter transition, and is never nested, chained, or read as authorizing another PRA ({{security-transitions}}).
 
-2. **One authorization server.**  A PRA names exactly one authorization server in `aud`, as one case-sensitive string, and is valid only there ({{pra-claims}}).  A binding to another protocol exchange defines what `aud` carries for that exchange, but names exactly one verifying party.
+2. **One authorization server.**  A PRA names exactly one authorization server in `aud`, as one case-sensitive string, and is valid only there ({{pra-claims}}).
 
 3. **Exact token binding.**  A PRA authorizes presentation of the one Source Token whose encoded octets `sth` covers, and of no other token ({{pra-claims}}).
 
@@ -410,9 +430,15 @@ A captured Source Token and PRA cannot be used without control of the Recipient 
 
 A PRA is not one-time-use by default.  A deployment that requires one-time use needs atomic replay-cache processing and retry semantics keyed by `jti`; such a deployment requires `jti` by policy.  Offline revocation of a PRA is unavailable unless a profile defines a lookup mechanism, so short lifetimes are the primary control.
 
-This has an aggregate consequence that Original Presenters need to account for.  Presenter Limits bound the result of one Token Exchange request, not the total authorization obtainable from one PRA.  Until the PRA expires, the Recipient Presenter can repeat the exchange and obtain a separate token for each audience, resource, and scope combination the limits and policy allow.  A PRA limited to three audiences authorizes up to three tokens, not one.
+This has an aggregate consequence that Original Presenters need to account for.  Presenter Limits bound the result of one Token Exchange request, not the total authorization obtainable from one PRA.  Until the PRA expires, the Recipient Presenter can repeat the exchange without limit, and each exchange can select any nonempty subset of the permitted audiences, resources, and scopes.  One PRA therefore authorizes an unbounded number of tokens spanning every combination its limits permit, not one token and not one per limit value.  Because the dimensions combine as a Cartesian product ({{limits}}), the set of reachable authorizations is larger than a reading of the individual limits suggests.
 
 Presenter Limits cannot express a single-use restriction, and no authorization server check derives one from them.  A deployment that needs exactly one exchange requires the profile-defined one-time-use processing described above.  Absent that, an Original Presenter SHOULD keep the PRA lifetime close to the time the Recipient Presenter needs to make its request.
+
+## Derived Tokens and PRA Lifetime {#security-derived}
+
+A PRA authorizes one exchange; it does not govern what the resulting credential can do afterwards.  `exp` bounds the interval during which the exchange may occur and has no relationship to the lifetime of the token the exchange issues.  A five-minute PRA can produce an access token valid for far longer.  The lifetime of that token is determined by authorization-server policy and the applicable profile, which SHOULD account for the fact that the token continues to carry authorization derived from the Source Token after both the PRA and the Source Token have expired.
+
+The prohibition on refresh tokens in {{te-processing}} follows from the same concern in a sharper form.  {{RFC9449, Section 5}} deliberately does not bind a refresh token issued to a confidential client to the DPoP proof public key, because it is already sender-constrained by that client's credentials.  A Recipient Presenter authenticating with a client assertion is such a client.  Were a refresh token issued here, the Recipient Presenter would hold a long-lived credential derived from another party's key-bound token whose control rests on its own client credentials rather than on the Recipient Presenter key, and it could keep minting tokens after the PRA expired.  No presenter-key transition would have been authorized for any of them, and the authorization server would never re-evaluate the handoff.  This is the one-hop invariant of {{security-transitions}} failing by a route that adds no assertion at all.
 
 ## Request Binding {#security-request-binding}
 
@@ -499,6 +525,13 @@ This document requests registration of the following claims in the "JSON Web Tok
 
 and:
 
+*  Claim Name: `stt`
+*  Claim Description: Source Token Type; token type identifier under which the token whose presenter is being rebound is presented
+*  Change Controller: IESG
+*  Specification Document: {{pra-claims}} of this document
+
+and:
+
 *  Claim Name: `presenter_limits`
 *  Claim Description: Upper bounds on authorization resulting from a presenter-rebound Token Exchange
 *  Change Controller: IESG
@@ -508,7 +541,7 @@ and:
 
 This document requests creation of a new registry, "Presenter Limits Members", to hold the members defined for the `presenter_limits` claim ({{limits}}).
 
-The registration procedure is Specification Required.  The designated expert is directed to confirm that a proposed member specifies a containment rule that compares a requested value and the corresponding authorization in the issued token, that the rule can be evaluated by simple comparison or is otherwise fully specified, and that it fails closed when containment cannot be determined, as required by {{security-limits}}.  A member that can broaden the result of an exchange MUST NOT be registered.
+The registration procedure is Specification Required {{RFC8126}}.  The designated expert is directed to confirm that a proposed member specifies a containment rule that compares a requested value and the corresponding authorization in the issued token, that the rule can be evaluated by simple comparison or is otherwise fully specified, and that it fails closed when containment cannot be determined, as required by {{security-limits}}.  A member that can broaden the result of an exchange MUST NOT be registered.
 
 Each registration contains a Member Name, a Description, a Change Controller, and a Specification Document.  The initial contents are the three members defined by this document:
 
@@ -571,11 +604,11 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 &client_assertion=<Delegate client assertion>
 ~~~
 
-The IdP validates the ID Token under the composed profile, reduces its `cnf` to `jkt(K_init)`, confirms that the PRA is signed by `K_init`, verifies the Source Token hash and IdP audience, and verifies the Delegate's DPoP proof of `K_del`.  Because the PRA carries an `audience` limit, the request must carry an `audience` parameter, and the IdP checks the requested value against that limit rather than defaulting it.  It separately authenticates the Delegate as client and actor, validates the administered cross-client relationship and `may_act` when present, and applies exchange-time policy.
+The IdP validates the ID Token under the composed profile, reduces its `cnf` to `jkt(K_init)`, confirms that the PRA is signed by `K_init`, verifies the Source Token hash, confirms that the PRA `stt` equals the request's `subject_token_type`, verifies the IdP audience, and verifies the Delegate's DPoP proof of `K_del`.  Because the PRA carries an `audience` limit, the request must carry an `audience` parameter, and the IdP checks the requested value against that limit rather than defaulting it.  It separately authenticates the Delegate as client and actor, validates the administered cross-client relationship and `may_act` when present, and applies exchange-time policy.
 
 The single `K_del` proof serves both roles required by {{te-request}}: it satisfies the PRA `cnf.jkt` and it sender-constrains the token the IdP issues.  Note that the Delegate authenticates as a client with a separate client assertion, so client authentication remains independent of key control.
 
-On success, the IdP issues a token sender-constrained to `K_del`.  The applicable profile can authorize it to record the Delegate as the current actor and the Initiator as a prior actor:
+On success, the IdP issues an access token sender-constrained to `K_del`, with `token_type` of `DPoP`, and no refresh token ({{te-processing}}).  The applicable profile can authorize it to record the Delegate as the current actor and the Initiator as a prior actor:
 
 ~~~json
 {
@@ -593,6 +626,8 @@ On success, the IdP issues a token sender-constrained to `K_del`.  The applicabl
   }
 }
 ~~~
+
+The PRA expires five minutes after it is signed, which bounds when the Delegate may perform this exchange.  It does not bound how long the issued access token remains valid; that is IdP policy ({{security-derived}}).
 
 An attacker that captures the Initiator's ID Token and PRA cannot perform the exchange without `K_del`.  If the Delegate later hands authority to another presenter, it uses the newly issued `K_del`-bound token as the Source Token in a new exchange; it does not extend the original PRA.
 
