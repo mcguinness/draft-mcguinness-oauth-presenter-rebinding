@@ -43,7 +43,6 @@ normative:
   RFC8414:
   RFC8693:
   RFC8707:
-  RFC8126:
   RFC8725:
   RFC9449:
 
@@ -205,7 +204,7 @@ A PRA MAY contain:
 
 *  `jti`: an identifier for audit, profile-defined one-time use, or profile-defined revocation.  Reuse of a PRA `jti` is not by itself a replay because a PRA authorizes a key and can be used more than once during its validity interval unless a profile says otherwise.
 
-*  `presenter_limits`: a JSON object restricting the Token Exchange result as specified in {{limits}}.  Its defined members are `audience`, `resource`, and `scope`, all of which an authorization server supporting presenter rebinding MUST implement.  An authorization server MUST reject a PRA carrying any other member unless that member is registered per {{iana-limits}} and the authorization server implements it.
+*  `presenter_limits`: a JSON object restricting the Token Exchange result as specified in {{limits}}.  It has one defined member, `audience`, which an authorization server supporting presenter rebinding MUST implement.  An authorization server MUST reject a PRA whose `presenter_limits` carries any other member.
 
 Other claims MUST NOT be interpreted as identifying the Original Presenter or granting authority unless an applicable profile explicitly defines that meaning and its validation rules.
 
@@ -228,21 +227,17 @@ The object can contain:
 
 *  `audience`: an array of case-sensitive Token Exchange audience strings.  A requested or issued audience is within this limit when it is a member of the array.
 
-*  `resource`: an array of resource indicator URI strings {{RFC8707}}.  Each member MUST be an absolute URI without a fragment component, as required by {{RFC8707, Section 2}}.  A requested or issued resource is within this limit when it equals a member of the array by simple string comparison.  This specification defines no prefix, path-hierarchy, or wildcard relationship between resource indicators.  An authorization server that cannot determine containment by string comparison MUST reject the request.
+When `audience` is absent, the PRA places no restriction on the audiences the exchange may produce.
 
-*  `scope`: a space-delimited set of scope values.  A requested or granted scope value is within this limit when it is a member of the set.
-
-When a member is absent, the PRA places no restriction on that dimension.
-
-Presenter Limits constrain each dimension independently, and the dimensions combine as {{RFC8693, Section 2.1.1}} specifies: "the requested access rights of the token are the Cartesian product of all the scopes at all the target services."  Presenter Limits are therefore a Cartesian-product ceiling.  A PRA carrying `audience` of `["service-a", "service-b"]` and `scope` of `read write` permits both scopes at both services; it cannot express write access at one service and read-only access at the other.  An Original Presenter that needs to correlate a scope with a particular audience or resource MUST sign a separate PRA for each correlated combination, each carrying only the values that belong together.  Signing one PRA with the union of the values it would have used across several is a broader authorization than it appears.
-
-When a member is present, the corresponding Token Exchange request parameter MUST be present in the request, and every value it carries MUST be within the limit.  An authorization server MUST reject a request that omits a parameter for which the PRA carries a limit.  Requiring the requester to state what it wants removes the case in which an authorization-server default, rather than the request, determines the result for a limited dimension.  A Recipient Presenter holds the PRA and can therefore read each limit it must request within.
+When `audience` is present, the Token Exchange `audience` request parameter MUST be present in the request, and every value it carries MUST be within the limit.  An authorization server MUST reject a request that omits `audience` when the PRA limits it.  Requiring the requester to state what it wants removes the case in which an authorization-server default, rather than the request, determines the result for a limited dimension.  A Recipient Presenter holds the PRA and can therefore read each limit it must request within.
 
 The authorization server MAY issue a result narrower than both the request and the Presenter Limits.  It MUST NOT issue a result broader than either.
 
-Together these rules confine the issued token by construction: the request is explicit for every limited dimension, the request is within the limit, and the issued authorization is within the request.  An authorization server whose issuance cannot produce a value outside the request for a limited dimension therefore satisfies this section by comparing the request against the limit, at the point where it already validates `audience`, `resource`, and `scope`.  {{security-limits}} states the requirement that remains on the issued authorization.
+Together these rules confine the issued token by construction: the request is explicit for every limited dimension, the request is within the limit, and the issued authorization is within the request.  An authorization server whose issuance cannot produce an audience outside the request therefore satisfies this section by comparing the request against the limit, at the point where it already validates `audience`.  {{security-limits}} states the requirement that remains on the issued authorization.
 
-This specification does not define limits for `authorization_details`; a profile that needs such limits must define type-specific containment rules in an extension and register the member per {{iana-limits}}.  A profile whose base already carries `authorization_details` through Token Exchange therefore loses an upper bound on that dimension when it composes with this document, and needs such an extension to restore it.  {{security-limits}} states the requirements an extension must meet.
+`audience` is the only dimension this specification bounds.  It was chosen because it names where the issued token can be used, which is the constraint an Original Presenter is best placed to decide for a particular handoff, and because a single dimension cannot combine with another to authorize more than it appears to.  {{RFC8693, Section 2.1.1}} makes the requested rights of a token "the Cartesian product of all the scopes at all the target services", so a limit spanning several dimensions permits every combination of their values rather than the pairing its author had in mind.
+
+Resources, scopes, and `authorization_details` are therefore bounded by the authorization server's own policy for the exchange, not by the PRA.  A profile that needs the Original Presenter to bound one of them cryptographically has to define the containment rule for that dimension, the comparison it uses, and its behavior when containment cannot be determined, and in doing so updates this document ({{extensibility}}).  {{security-limits}} states why this specification does not attempt a generic rule.
 
 ## Confirmation-Key Identification {#key-identification}
 
@@ -310,7 +305,7 @@ On success, the Source Token's proof-of-possession requirement for this Token Ex
 This specification defines the following Token Exchange parameter:
 
 `presenter_rebinding`:
-: The compact JWS serialization of one PRA rooted in the `subject_token`'s confirmation key.  It is REQUIRED when the requester uses this mechanism and MUST NOT occur more than once.
+: The compact JWS serialization of one PRA rooted in the `subject_token`'s confirmation key.  Its presence is what invokes this mechanism.  It MUST NOT occur more than once, and an authorization server MUST reject a request carrying it more than once rather than selecting one occurrence.
 
 The `subject_token` is the Source Token, and the request's `subject_token_type` MUST equal the PRA `stt` claim.  The PRA `aud` MUST be the authorization server's issuer identifier; it is not the token endpoint URI, the DPoP `htu`, or the requested token audience.
 
@@ -391,13 +386,13 @@ The Cross-Client Delegation profile {{I-D.mcguinness-oauth-cross-client-delegati
 *  the PRA is conjunctive with the administered cross-client relationship, `may_act` when present, Delegate client and actor authentication, and exchange-time policy.
 
 
-# Extensibility {#extensibility}
+# Design Invariants {#extensibility}
 
-This document deliberately offers one extension point.  An extension MAY define an additional `presenter_limits` member, subject to {{iana-limits}} and to the containment requirements in {{security-limits}}.  Registration is what keeps independent extensions from choosing the same member name: a member the authorization server does not implement already fails closed under {{pra-claims}}, but without a registry a collision is not detectable at the time either extension is written.
+This document defines no extension points.  Every part of the mechanism is fixed: the Source Token is a JWT, the confirmation method is `jkt`, the proof mechanism is DPoP, `aud` is an authorization server issuer identifier, the output is a DPoP-bound access token, `presenter_limits` bounds `audience` and nothing else, and the only binding is the Token Exchange binding of {{token-exchange}}.  Widening any of them means overriding a normative requirement here, so a specification that does so updates this document rather than extending it.  {{scope}} places those cases outside this document's scope; it does not reserve them against a future specification that takes them on deliberately.
 
-Everything else about the mechanism is fixed by design.  The confirmation method is `jkt` and the proof mechanism is DPoP; `aud` is an authorization server issuer identifier; and the only binding is the Token Exchange binding of {{token-exchange}}.  A specification that changes any of these would have to override a normative requirement of this document, so it updates this document rather than extending it.  {{scope}} places those cases outside this document's scope; it does not reserve them against a future specification that takes them on deliberately.
+Fixing the mechanism this narrowly is a deliberate trade.  An implementer can build the whole of it without deciding which optional pieces to support, and two independent implementations have nothing to negotiate.  The cost is that growth requires revising this document, which is the right cost while no second deployment exists to tell us which way it should grow.
 
-Any such specification MUST preserve each of the following invariants.  A specification that changes one of them is a different protocol and requires its own validation, revocation, privacy, and resource-exhaustion analysis.  Each invariant is stated normatively in the section referenced beside it; the list below summarizes those requirements and does not restate them, and the referenced section governs.
+Any specification that revises this document MUST preserve each of the following invariants.  A specification that changes one of them is a different protocol and requires its own validation, revocation, privacy, and resource-exhaustion analysis.  Each invariant is stated normatively in the section referenced beside it; the list below summarizes those requirements and does not restate them, and the referenced section governs.
 
 1. **One hop.**  A PRA authorizes one presenter transition, and is never nested, chained, or read as authorizing another PRA ({{security-transitions}}).
 
@@ -434,7 +429,7 @@ A captured Source Token and PRA cannot be used without control of the Recipient 
 
 A PRA is not one-time-use by default.  A deployment that requires one-time use needs atomic replay-cache processing and retry semantics keyed by `jti`; such a deployment requires `jti` by policy.  Offline revocation of a PRA is unavailable unless a profile defines a lookup mechanism, so short lifetimes are the primary control.
 
-This has an aggregate consequence that Original Presenters need to account for.  Presenter Limits bound the result of one Token Exchange request, not the total authorization obtainable from one PRA.  Until the PRA expires, the Recipient Presenter can repeat the exchange without limit, and each exchange can select any nonempty subset of the permitted audiences, resources, and scopes.  One PRA therefore authorizes an unbounded number of tokens spanning every combination its limits permit, not one token and not one per limit value.  Because the dimensions combine as a Cartesian product ({{limits}}), the set of reachable authorizations is larger than a reading of the individual limits suggests.
+This has an aggregate consequence that Original Presenters need to account for.  Presenter Limits bound the result of one Token Exchange request, not the total authorization obtainable from one PRA.  Until the PRA expires, the Recipient Presenter can repeat the exchange without limit, and each exchange can select any nonempty subset of the permitted audiences and request whatever scopes and resources the authorization server's own policy allows.  One PRA limited to three audiences therefore authorizes an unbounded number of tokens across those three audiences, not one token and not three.
 
 Presenter Limits cannot express a single-use restriction, and no authorization server check derives one from them.  A deployment that needs exactly one exchange requires the profile-defined one-time-use processing described above.  Absent that, an Original Presenter SHOULD keep the PRA lifetime close to the time the Recipient Presenter needs to make its request.
 
@@ -462,13 +457,15 @@ Presenter Limits only narrow authorization.  An authorization server MUST apply 
 
 A present limit is an input to the computation that produces the granted authorization, alongside the request, the Source Token's authorization, and local policy.  It is not a check appended after issuance.  This is why {{limits}} rejects a request that omits a parameter for a limited dimension rather than defaulting it: a default computed without the limit as an input can exceed it, and a server that discovers this only by inspecting the finished token has already done the work twice.  The authorization placed in the issued token MUST NOT exceed a present limit, whatever other input would otherwise have produced a broader result.
 
-An authorization server that supports only some registered `presenter_limits` members fails closed rather than open.  {{pra-claims}} requires it to reject a PRA carrying a member it does not support, so a limit an authorization server cannot enforce is never silently ignored.
+An unrecognized member fails closed rather than open.  {{pra-claims}} requires an authorization server to reject a PRA whose `presenter_limits` carries any member other than `audience`, so a limit an authorization server cannot enforce is never silently ignored.
 
-This specification omits generic `authorization_details` containment because arbitrary authorization-detail types do not share a safe comparison operation.  Extensions adding such limits must define type-specific semantics and fail closed when containment cannot be determined.
+This specification bounds one dimension because a bound is only safe when the comparison that enforces it is fully defined.  Resource indicators, scope values, and `authorization_details` types do not share one such comparison: {{RFC8707}} URIs admit more than one plausible containment rule, and arbitrary authorization-detail types share none at all.  A specification adding a dimension must define its comparison and must fail closed when containment cannot be determined, which is why {{extensibility}} treats such an addition as an update to this document rather than an extension of it.
 
 ## Subsequent Presenter Transitions {#security-transitions}
 
-The Recipient Presenter cannot extend a PRA or sign a PRA for the original Source Token because it does not hold the Source Confirmation Key.  A later transition requires a successful exchange yielding a new token bound to the current presenter's key.  This forces the authorization server to reevaluate policy at every transition and keeps the PRA proof path constant in size, avoiding recursive parsing, cycle handling, and offline propagation of authority.
+One hop is a security boundary, not a simplification.  Every presenter transition past the first would occur offline, between parties, with no authorization server in the path: authority granted for one handoff would propagate to parties the authorization server never evaluated, at a time it could not observe, under a policy that may have changed or been revoked since.  Requiring each transition to be an exchange means the authorization server decides every time who may present what, and can refuse.
+
+The Recipient Presenter cannot extend a PRA or sign a PRA for the original Source Token because it does not hold the Source Confirmation Key.  A later transition requires a successful exchange yielding a new token bound to the current presenter's key.  Keeping the proof path to one hop also keeps it constant in size and avoids recursive parsing and cycle handling, but those are consequences of the boundary rather than the reason for it.
 
 The proof path is bounded; the actor history is not.  Each transition that a profile authorizes can add one `act` entry to the issued token per {{te-processing}}, so repeated presenter transitions grow that nesting one level at a time even though no PRA is ever nested.  This specification does not bound `act` depth, detect cycles among prior actors, or define disclosure rules for actor history.  A profile that authorizes actor recording MUST specify those limits; see also the OAuth Actor Profile for Delegation {{I-D.mcguinness-oauth-actor-profile}}.
 
@@ -540,20 +537,6 @@ and:
 *  Claim Description: Upper bounds on authorization resulting from a presenter-rebound Token Exchange
 *  Change Controller: IESG
 *  Specification Document: {{pra-claims}} and {{limits}} of this document
-
-## Presenter Limits Members Registry {#iana-limits}
-
-This document requests creation of a new registry, "Presenter Limits Members", to hold the members defined for the `presenter_limits` claim ({{limits}}).
-
-The registration procedure is Specification Required {{RFC8126}}.  The designated expert is directed to confirm that a proposed member specifies a containment rule that compares a requested value and the corresponding authorization in the issued token, that the rule can be evaluated by simple comparison or is otherwise fully specified, and that it fails closed when containment cannot be determined, as required by {{security-limits}}.  A member that can broaden the result of an exchange MUST NOT be registered.
-
-Each registration contains a Member Name, a Description, a Change Controller, and a Specification Document.  The initial contents are the three members defined by this document:
-
-*  Member Name: `audience`; Description: Upper bound on Token Exchange target audiences; Change Controller: IESG; Specification Document: {{limits}} of this document
-
-*  Member Name: `resource`; Description: Upper bound on resource indicators; Change Controller: IESG; Specification Document: {{limits}} of this document
-
-*  Member Name: `scope`; Description: Upper bound on granted scope values; Change Controller: IESG; Specification Document: {{limits}} of this document
 
 ## OAuth Parameters Registration {#iana-parameter}
 
@@ -635,6 +618,32 @@ The PRA expires five minutes after it is signed, which bounds when the Delegate 
 
 An attacker that captures the Initiator's ID Token and PRA cannot perform the exchange without `K_del`.  If the Delegate later hands authority to another presenter, it uses the newly issued `K_del`-bound token as the Source Token in a new exchange; it does not extend the original PRA.
 
+
+# Source Token Hash Test Vector {#appendix-sth}
+
+This appendix is informative.  `sth` is computed over the exact ASCII octets of the encoded Source Token, and the most likely interoperability failure is computing it over something else.  The following vector lets an implementation check its computation.
+
+Source Token, 115 ASCII characters, shown on two lines only to fit the page and containing no line break:
+
+~~~text
+eyJhbGciOiJFUzI1NiIsImtpZCI6ImlkdC0xIn0.eyJpc3MiOiJodHRwczov
+L2lkcC5leGFtcGxlIiwic3ViIjoidXNlci0xMjMifQ.c2lnbmF0dXJl
+~~~
+
+SHA-256 of those octets, in hexadecimal:
+
+~~~text
+f179b96b640f054c1c3d906e879f0c45
+00238fdffab1cb4a0f3ad5e13fff5e19
+~~~
+
+The `sth` claim value, that digest in base64url without padding:
+
+~~~text
+8Xm5a2QPBUwcPZBuh58MRQAjj9_6sctKDzrV4T__Xhk
+~~~
+
+Note that a compact-serialization JWT contains only base64url characters and periods, all of which `application/x-www-form-urlencoded` leaves unchanged.  The `subject_token` parameter therefore usually appears on the wire byte-for-byte as above, and an implementation that percent-decodes correctly will not notice the encoding boundary at all.  The failures to guard against are the ones {{pra-claims}} prohibits: computing the digest over decoded claims, over JSON the implementation reserialized, or over a canonicalized form.  Each of those produces a well-formed but different digest, and the resulting PRA fails validation at an authorization server that computed it correctly.
 
 # Acknowledgments
 {:numbered="false"}
